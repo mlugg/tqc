@@ -1,11 +1,13 @@
 {-# LANGUAGE Safe, LambdaCase, OverloadedStrings #-}
 
-module NEASyn where
+module QntSyn where
 
 import Data.Char
 import Data.Text (Text)
 import qualified Data.Text as T
 import Numeric.Natural
+import Data.Set (Set)
+import qualified Data.Set as S
 
 -- Expressions {{{
 
@@ -49,11 +51,15 @@ data DataConstr = DataConstr Text [Type]
 data Type
   = TName Text
   | TVar Text
-  | TAppl Type Type
-  deriving (Show)
+  | TUnif Integer
+  | TApp Type Type
+  deriving (Show, Eq)
 
-data TypeScheme = TypeScheme [Text] Type
-  deriving (Show)
+tArrow :: Type -> Type -> Type
+tArrow t0 t1 = TApp (TApp (TName "->") t0) t1
+
+data TypeScheme = TypeScheme (Set Text) Type
+  deriving (Show, Eq)
 
 -- }}}
 
@@ -66,19 +72,19 @@ data Kind
 
 -- }}}
 
-data NEAProg
-  = NEAProg [DataDecl] [Binding]
+data QntProg
+  = QntProg [DataDecl] [Binding]
   deriving (Show)
 
 pPrintTypeScheme :: TypeScheme -> Text
 pPrintTypeScheme (TypeScheme univs t) =
   if null univs
   then pPrintType t
-  else "∀" <> T.intercalate " " univs <> ". " <> pPrintType t
+  else "∀" <> T.intercalate " " (S.elems univs) <> " . " <> pPrintType t
 
 pPrintType :: Type -> Text
 pPrintType = \case
-  TAppl (TAppl (TName "->") x) y -> "(" <> pPrintType x <> " -> " <> pPrintType y <> ")"
+  TApp (TApp (TName "->") x) y -> "(" <> pPrintType x <> " -> " <> pPrintType y <> ")"
 
   TName x ->
     if isSymbolic x
@@ -87,6 +93,8 @@ pPrintType = \case
 
   TVar x -> x
 
-  TAppl x y -> "(" <> pPrintType x <> " " <> pPrintType y <> ")"
+  TUnif x -> "α" <> T.pack (show x)
+
+  TApp x y -> "(" <> pPrintType x <> " " <> pPrintType y <> ")"
 
   where isSymbolic = not . isAlpha . T.head

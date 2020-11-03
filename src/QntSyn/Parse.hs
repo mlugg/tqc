@@ -1,9 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 -- TODO: trustworthy?
 
-module NEASyn.Parse where
+module QntSyn.Parse where
 
-import NEASyn
+import QntSyn
 
 import Data.Void
 import Control.Monad
@@ -16,6 +16,8 @@ import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 
 import Control.Monad.Combinators.Expr
+
+import qualified Data.Set as S
 
 type Parser = Parsec Void Text
 
@@ -132,8 +134,8 @@ kind = try (KArrow <$> (kTerm <* reservedOp "->") <*> kind)
 
 type_ :: Parser Type
 type_ = makeExprParser typeTerm
-  [ [ InfixL $ pure TAppl ]
-  , [ InfixR $ (\x y -> TAppl (TAppl (TName "->") x) y) <$ reservedOp "->" ]
+  [ [ InfixL $ pure TApp ]
+  , [ InfixR $ (\x y -> TApp (TApp (TName "->") x) y) <$ reservedOp "->" ]
   ]
 
 typeTerm :: Parser Type
@@ -142,10 +144,10 @@ typeTerm = parens type_
   <|> TVar  <$> identLower
 
 typeScheme :: Parser TypeScheme
-typeScheme = polyType <|> (TypeScheme [] <$> type_)
+typeScheme = polyType <|> (TypeScheme S.empty <$> type_)
   where
     polyType = TypeScheme
-      <$> (reserved "forall" *> some identLower)
+      <$> (reserved "forall" *> (S.fromList <$> some identLower))
       <*> (reservedOp "." *> type_)
 
 -- }}}
