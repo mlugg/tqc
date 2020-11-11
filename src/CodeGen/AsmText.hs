@@ -3,6 +3,7 @@
 module CodeGen.AsmText where
 
 import Data.Text (Text)
+import Data.Foldable
 import qualified Data.Text as T
 import CodeGen.Asm
 
@@ -48,4 +49,4 @@ asmInsnText = \case
 
 asmFuncText :: AsmFunc -> Text
 asmFuncText (AsmFunc name is) =
-  name <> ":\n  " <> T.intercalate "\n  " (asmInsnText <$> is)
+  name <> ":\n  " <> T.intercalate "\n  " (toList $ asmInsnText <$> is)

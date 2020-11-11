@@ -3,6 +3,7 @@ module CodeGen.Asm where
 import Data.Text (Text)
 import Data.Word
 import Data.Int
+import Data.Sequence
 
 data Reg = SP | BP | AX | BX | CX | DX
   deriving (Show)
@@ -33,5 +34,5 @@ data Instruction
   | Ret
   deriving (Show)
 
-data AsmFunc = AsmFunc Text [Instruction]
+data AsmFunc = AsmFunc Text (Seq Instruction)
   deriving (Show)
