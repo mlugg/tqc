@@ -31,8 +31,11 @@ data Expr
   | ENatLit Natural
   | EAppl Expr Expr
   | ELambda Text [Text] Expr  -- ELambda arg frees body
-  | ELet [(Text, Expr)] Expr
-  | ECase Expr [(Pattern, Expr)] (Text, Expr)  -- ECase scrutinee cases default
+  | ELet [Binding] Expr
+  | ECase Expr Text [Alt] Expr -- ECase scrutinee name alts def
+  deriving (Show)
+
+data Binding = Binding Text Expr
   deriving (Show)
 
 data Pattern
@@ -40,11 +43,15 @@ data Pattern
   | PNatLit Natural
   deriving (Show)
 
--- Like Expr, DataDecl is untyped
-data DataDecl = DataDecl Text [DataConstr] -- DataDecl name constrs
+data Alt = Alt Pattern Expr
   deriving (Show)
+
+-- Like Expr, DataDecl is untyped
+data DataDecl = DataDecl Text [DataConstr]
+  deriving (Show)
+
 data DataConstr = DataConstr Text Natural  -- DataConstr name nargs
   deriving (Show)
 
-data NclProg = NclProg [DataDecl] [(Text, Expr)]
+data NclProg = NclProg [DataDecl] [Binding]
   deriving (Show)
