@@ -103,7 +103,8 @@ genSingle = \case
   PObjSwitchLit field alts def -> do
     swId <- freshId
     let swId' = T.pack $ show swId
-    let numberedAlts = zip [0..] alts
+    let numberedAlts :: [(Natural, SwitchAlt)]
+        numberedAlts = zip [0..] alts
         src0 = Seq.fromList
           [ Pop (R CX)
           , Mov8 (R DX) (IndexObj CX (OBody $ 8 * field))

@@ -7,6 +7,7 @@ import QntSyn
 
 import Data.Void
 import Control.Monad
+import Numeric.Natural
 
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -23,21 +24,34 @@ type Parser = Parsec Void Text
 
 -- Utility parsers {{{
 
+sc :: Parser ()
 sc = L.space space1 (L.skipLineComment "--") (L.skipBlockCommentNested "{-" "-}")
+
+lexeme :: Parser a -> Parser a
 lexeme = L.lexeme sc
+
+symbol :: Text -> Parser Text
 symbol = L.symbol sc
 
+decimal :: Parser Natural
 decimal = lexeme L.decimal
 
+parens :: Parser a -> Parser a
 parens = between (symbol "(") (symbol ")")
+braces :: Parser a -> Parser a
 braces = between (symbol "{") (symbol "}")
 
+reservedWords :: [Text]
 reservedWords = [ "let", "in", "case", "of", "data", "STAR", "forall" ]
+reservedOps :: [Text]
 reservedOps = [ "\\", "->", "::", "=", "|", "." ]
 
+identChar :: Parser Char
 identChar = oneOf $ ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ ['_','\'']
+opChar :: Parser Char
 opChar = oneOf (".,:!<>[]+-=|\\/" :: [Char])
 
+identifier :: Parser Char -> Parser Text
 identifier identStart = try $ do
   x <- identStart
   xs <- many identChar
@@ -46,6 +60,7 @@ identifier identStart = try $ do
   guard (not $ name `elem` reservedWords)
   pure name
 
+operator :: Parser Text
 operator = try $ do
   xs <- some opChar
   sc
@@ -53,15 +68,22 @@ operator = try $ do
   guard (not $ name `elem` reservedOps)
   pure name
 
+identLower :: Parser Text
 identLower = identifier $ oneOf $ '_' : ['a'..'z']
+identUpperOp :: Parser Text
 identUpperOp = identifier (oneOf ['A'..'Z']) <|> parens operator
+identAnyOp :: Parser Text
 identAnyOp = identifier (oneOf $ '_' : ['a'..'z'] ++ ['A'..'Z']) <|> parens operator
 
+reserved :: Text -> Parser Text
 reserved x = lexeme $ string x <* notFollowedBy identChar
+reservedOp :: Text -> Parser Text
 reservedOp x = lexeme $ string x <* notFollowedBy opChar
 
+semi :: Parser Text
 semi = symbol ";"
 
+semiTerm :: Parser a -> Parser a
 semiTerm x = x <* semi
 
 -- }}}

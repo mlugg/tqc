@@ -9,7 +9,6 @@ import qualified Data.Text as T
 import Numeric.Natural
 import Data.Map (Map)
 import qualified Data.Map as M
-import Data.Traversable
 import Data.Foldable
 import Data.Sequence hiding (zip, length)
 import Data.Word

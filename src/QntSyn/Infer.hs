@@ -18,6 +18,7 @@ import Control.Monad.Except
 import Data.Functor
 import Data.Maybe
 import Data.Either
+import Numeric.Natural
 
 newtype Subs = Subs { unSubs :: Map Integer Type }
   deriving (Show)
@@ -109,18 +110,18 @@ instantiate (TypeScheme unis t) =
       replace (M.fromList $ zip unis' insts) t
 
 generalize :: Integer -> Type -> TypeScheme
-generalize min t =
+generalize m t =
   let unifs = findUnifs t
-      names = M.fromList $ zip (S.toList unifs) (fmap (\x -> "a" <> T.pack (show x)) [0..]) -- TODO FIXME XXX CONFLICTS?
+      names = M.fromList $ zip (S.toList unifs) (fmap (\x -> "a" <> T.pack (show x)) [0 :: Natural ..]) -- TODO FIXME XXX CONFLICTS?
   in TypeScheme (S.fromList $ M.elems names) $ applySubs (Subs $ M.map TVar names) t
   where findUnifs (TApp l r) = findUnifs l <> findUnifs r
         findUnifs (TUnif i) = S.singleton i
         findUnifs _ = S.empty
 
 generalize' :: Integer -> Type -> Infer TypeScheme
-generalize' min t = do
+generalize' m t = do
   s <- getSubs
-  pure $ generalize min $ applySubs s t
+  pure $ generalize m $ applySubs s t
 
 lookupEnv :: Text -> Infer TypeScheme
 lookupEnv x = asks (M.lookup x . envTypeEnv) >>= \case
@@ -171,7 +172,7 @@ unify t0 t1 = do
 
     unify' t (TUnif x) = unify' (TUnif x) t
 
-    unify' t0 t1 = throwError $ TE_ $ T.pack $ "cannot unify " <> show t0 <> " and " <> show t1
+    unify' x y = throwError $ TE_ $ T.pack $ "cannot unify " <> show x <> " and " <> show y
 
 -- }}}
 
@@ -207,7 +208,7 @@ inferScheme e = do
   pure $ generalize firstTyVar $ applySubs s t
 
 inferGroup :: TypeEnv -> [(Text, Expr)] -> Infer TypeEnv
-inferGroup env binds = localTypeEnv (M.union env) $ do
+inferGroup initEnv binds = localTypeEnv (M.union initEnv) $ do
   groupEnv <- foldM (\env (x,_) -> do { t <- fresh; pure $ M.insert x (TypeScheme S.empty t) env }) M.empty binds
 
   firstTyVar <- gets fst
@@ -215,11 +216,11 @@ inferGroup env binds = localTypeEnv (M.union env) $ do
   inferred <- localTypeEnv (M.union groupEnv)
     $ traverse (\(x,e) -> do { t <- infer e; pure (x,t) }) binds
 
-  zipWithM unify ((\(TypeScheme _ t) -> t) <$> M.elems groupEnv) (snd <$> inferred)
+  zipWithM_ unify ((\(TypeScheme _ t) -> t) <$> M.elems groupEnv) (snd <$> inferred)
 
   inferred' <- mapM (\(x,t) -> do { ts <- generalize' firstTyVar t; pure (x, ts) }) inferred
 
-  pure $ env <> M.fromList inferred'
+  pure $ initEnv <> M.fromList inferred'
 
 inferBindings :: [Binding] -> Infer TypeEnv
 inferBindings bs = do

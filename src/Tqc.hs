@@ -2,9 +2,7 @@
 
 module Tqc where
 
-import Data.Bifunctor
 import Data.Sequence
-import Control.Applicative
 import Control.Monad
 
 data CompileError

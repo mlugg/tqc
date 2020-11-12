@@ -8,8 +8,8 @@ import QntSyn.Infer
 
 main :: IO ()
 main = do
-  t <- TIO.getContents
-  case parse expr "<stdin expr>" t of
+  src <- TIO.getContents
+  case parse expr "<stdin expr>" src of
     Left err -> putStrLn $ errorBundlePretty err
     Right e  -> case doInfer e of
       Left err -> print err
