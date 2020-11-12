@@ -39,12 +39,12 @@ freshId = Gen $ \n -> pure (n, n+1)
 
 -- rbp: base ptr
 -- rsp: stack ptr
--- rax: ptr to argument or return val
+-- rax: ptr to argument
 -- rbx: ptr to function object
--- rcx, rdx: intermediate registers
+-- rcx: return val
+-- rax-rdx are scratch registers
 
--- alloc takes input (allocation size in 8-byte words) in rcx and
--- returns in rcx
+-- alloc takes input (size in bytes) in rcx and returns in rdx
 
 intWord :: Word64 -> Int64
 intWord = fromIntegral

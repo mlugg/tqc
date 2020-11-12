@@ -1,16 +1,17 @@
 ; CALLING CONVENTION
-; rax: argument and return val for function bodies
-; rbx: function object for function bodies
-; rcx: thing to be evaluated for eval
+; rax: argument
+; rbx: function object when calling functions
+; rcx: return val
 ; rax - rdx are scratch registers
 
-; CURRENT EXCEPTION: alloc will not clobber rax/rbx/rdx (but may clobber
-; rcx) (Should I remove that special case? It might be a good idea to
-; keep tbh; most allocations will be super trivial so won't need the
-; other registers, and allocation happens enough that not unneccesarily
-; copying the registers a bunch is probably a good plan. on the other
-; hand, having possible things in registers makes gc a tiny bit more
-; annoying. Leaning towards removing the exception just for consistency)
+; eval takes an object, evaluates to WHNF, and returns the address of
+; the object behind any indirections
+
+; alloc does not follow calling convention; it takes a size in rcx,
+; returns in rdx, and clobbers only rcx/rdx. This is because for a
+; bump-pointer allocator, most allocations are trivial so don't
+; need the extra registers; as allocations are incredibly common,
+; avoiding the extra push/pop ops is probably good.
 
 %define OBJ_TYPE_FUN 0
 %define OBJ_TYPE_DATA 1
