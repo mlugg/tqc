@@ -29,8 +29,12 @@ data Instruction
   | Pop Loc
   | Mov8 Loc Loc
   | Mov4 Loc Loc
+  | Cmp Loc Loc
   | Add Reg Word64
   | Call Loc
+  | Je Loc
+  | Jmp Loc
+  | Label Text
   | Ret
   deriving (Show)
 

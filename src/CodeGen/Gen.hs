@@ -7,11 +7,13 @@ import Data.Word
 import PhtnSyn
 import CodeGen.Asm
 import Data.Foldable
-import Data.Sequence
+import Data.Traversable
+import Data.Sequence hiding (zip)
 import qualified Data.Sequence as Seq (fromList)
 import Tqc
 import Numeric.Natural
 import Control.Monad
+import qualified Data.Text as T
 
 -- Monad definition and operations {{{
 
@@ -71,17 +73,15 @@ genSingle = \case
           AllocInd -> (L "OBJ_TYPE_IND", 1, "eval_ind")
 
         extra = case info of
-          AllocFun _ entry -> [ Mov8 (IndexObj CX (OBody 0)) (L entry) ]
+          AllocFun _ entry -> [ Mov8 (IndexObj DX (OBody 0)) (L entry) ]
           _ -> []
     in pure $ Seq.fromList $
         [ Mov8 (R CX) (HdrSizePlus $ 8 * bodyLen)
-        , Push (R AX)
         , Call (L "alloc")
-        , Pop (R AX)
-        , Push (R CX)
-        , Mov4 (IndexObj CX OType) objType
-        , Mov4 (IndexObj CX OSize) (I bodyLen)
-        , Mov8 (IndexObj CX OEval) (L eval)
+        , Push (R DX)
+        , Mov4 (IndexObj DX OType) objType
+        , Mov4 (IndexObj DX OSize) (I bodyLen)
+        , Mov8 (IndexObj DX OEval) (L eval)
         ] <> extra
 
   PObjSetPtr obj n val -> pure $ Seq.fromList $
@@ -100,7 +100,51 @@ genSingle = \case
     , Push (IndexObj CX (OBody $ 8 * n))
     ]
 
-  PObjSwitchLit obj n alts def -> _
+  PObjSwitchLit field alts def -> do
+    swId <- freshId
+    let swId' = T.pack $ show swId
+    let numberedAlts = zip [0..] alts
+        src0 = Seq.fromList
+          [ Pop (R CX)
+          , Mov8 (R DX) (IndexObj CX (OBody $ 8 * field))
+          ]
+
+    src1 <- fmap mconcat $ for numberedAlts $ \(n, SwitchAlt x _) -> do
+      let lblName = ".sw" <> swId' <> "c" <> T.pack (show n)
+      pure $ Seq.fromList $
+        [ Cmp (R DX) (I x)
+        , Je (L lblName)
+        ]
+
+    let src2 = Seq.fromList
+          [ Jmp (L $ ".sw" <> swId' <> "d") ]
+
+    src3 <- fmap mconcat $ for numberedAlts $ \(n, SwitchAlt _ src) -> do
+      s <- genSrc src
+      pure $ Label (".sw" <> swId' <> "c" <> T.pack (show n))
+          <| (s |> Jmp (L $ ".sw" <> swId' <> "end"))
+
+    let src4 = pure $
+          Label $ ".sw" <> swId' <> "d"
+
+    src5 <- genSrc def
+
+    let src6 = pure $
+          Label $ ".sw" <> swId' <> "end"
+
+    pure $ mconcat
+      [ src0, src1, src2, src3, src4, src5, src6 ]
+
+  PEval -> pure $ Seq.fromList $
+    [ Pop (R CX)
+    , Push (R AX)
+    , Push (R BX)
+    , Mov8 (R AX) (R CX)
+    , Call (IndexObj AX OEval)
+    , Pop (R BX)
+    , Pop (R AX)
+    , Push (R CX)
+    ]
 
   PPop n -> pure $ Seq.fromList $
     [ Add SP (n*8) ]
@@ -110,18 +154,19 @@ genSingle = \case
     , Mov8 (stackLoc dst) (R CX)
     ]
 
+genSrc :: PhtnSrc -> Gen (Seq Instruction)
+genSrc = fmap fold . traverse genSingle
+
 genFunc :: PhtnFunc -> Gen AsmFunc
-genFunc (PhtnFunc name is) = do
-  code <- fold <$> traverse genSingle is
+genFunc (PhtnFunc name src) = do
+  code <- genSrc src
   pure $ AsmFunc name (hdr <> code <> ftr)
   where hdr = Seq.fromList
           [ Push (R BP)
           , Mov8 (R BP) (R SP)
           ]
         ftr = Seq.fromList
-          [ Mov8 (R CX) (Index SP 0)
-          , Call (IndexObj CX OEval)
-          , Pop (R AX)
+          [ Pop (R CX)
           , Pop (R BP)
           , Ret
           ]

@@ -166,13 +166,16 @@ compile = \case
     -- Evaluate the scrutinee
     compile scrut
 
+    -- Force eval
+    tellSrc $ pure PEval
+
     withStack' [name] $ do
       -- Create a list of switch alternatives
       altsSrcs <- traverse compileCase alts
       -- Compile the default case
       defSrc <- flushSrc' $ compile def
       -- Switch on its constructor
-      tellSrc $ pure $ PObjSwitchLit (TopOff 0) 0 altsSrcs defSrc
+      tellSrc $ pure $ PObjSwitchLit 0 altsSrcs defSrc
 
 compileCase :: Alt -> Compile SwitchAlt
 compileCase (Alt pat expr) = do
@@ -191,7 +194,9 @@ compileCase (Alt pat expr) = do
     sOff <- asks envStackOff
     tellSrc $ fromList $ PObjGetPtr (BottomOff sOff) <$> [1..nbinds]
     withStack' binds $ compile expr
-    tellSrc $ pure $ PPop nbinds
+    tellSrc $ PReplaceStack (BottomOff sOff) (TopOff 0)
+           <| PPop nbinds
+           <| mempty
 
   pure $ SwitchAlt constrId src
 

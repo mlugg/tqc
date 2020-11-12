@@ -14,7 +14,8 @@ data PhtnInsn
   | PObjSetPtr StackPos Word64 StackPos -- PObjSetPtr obj field val
   | PObjSetLit StackPos Word64 Word64 -- PObjSetLit obj field val
   | PObjGetPtr StackPos Word64 -- PObjGetPtr obj field
-  | PObjSwitchLit StackPos Word64 [SwitchAlt] PhtnSrc -- PObjSwitchLit obj field alts def
+  | PObjSwitchLit Word64 [SwitchAlt] PhtnSrc -- PObjSwitchLit obj field alts def
+  | PEval -- evals tos, pushing new ptr
   | PPop Word64
   | PReplaceStack StackPos StackPos -- PReplaceStack dst src
   deriving (Show)

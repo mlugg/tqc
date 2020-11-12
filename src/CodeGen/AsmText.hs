@@ -43,8 +43,12 @@ asmInsnText = \case
   Pop l -> "pop " <> asmLocText Qword l
   Mov8 dst src -> "mov " <> asmLocText Qword dst <> ", " <> asmLocText Qword src
   Mov4 dst src -> "mov " <> asmLocText Dword dst <> ", " <> asmLocText Dword src
+  Cmp x y -> "cmp " <> asmLocText Qword x <> ", " <> asmLocText Qword y
   Add r n -> "add " <> asmLocText Qword (R r) <> ", " <> T.pack (show n)
   Call l -> "call " <> asmLocText Qword l
+  Je l -> "je " <> asmLocText Qword l
+  Jmp l -> "jmp " <> asmLocText Qword l
+  Label lbl -> lbl <> ":"
   Ret -> "ret"
 
 asmFuncText :: AsmFunc -> Text
