@@ -5,13 +5,12 @@ import Data.Word
 import Data.Int
 import Data.Sequence
 
-data Reg = SP | BP | AX | BX | CX | DX
+data Reg = SP | BP | AX | BX | CX | DX | SI | DI | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15
   deriving (Show)
 
 data ObjOff
   = OType
   | OSize
-  | OEval
   | OBody Word64
   deriving (Show)
 
@@ -36,6 +35,8 @@ data Instruction
   | Jmp Loc
   | Label Text
   | Ret
+  -- Macros
+  | MacEval
   deriving (Show)
 
 data AsmFunc = AsmFunc Text (Seq Instruction)

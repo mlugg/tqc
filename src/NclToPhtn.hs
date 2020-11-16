@@ -76,7 +76,7 @@ lookupVar x = do
     | x == envArg e -> tellSrc $ pure PPushArg
     | Just i <- M.lookup x (envStack e) -> tellSrc $ pure $ PPushStack (BottomOff i)
     | Just i <- M.lookup x (envFrees e) -> tellSrc $ pure $ PPushClos i
-    | otherwise -> throwErr _ -- TODO: global name
+    | otherwise -> tellSrc $ pure $ PPushGlobl $ "obj_" <> x
 
 withStack :: Map Text Word64 -> Compile a -> Compile a
 withStack new = withEnv $ \e -> e { envStack = new <> envStack e, envStackOff = fromIntegral (M.size new) + envStackOff e }

@@ -7,32 +7,60 @@ import Data.Foldable
 import qualified Data.Text as T
 import CodeGen.Asm
 
-asmRegText :: Reg -> Text
-asmRegText = \case
-  SP -> "sp"
-  BP -> "bp"
-  AX -> "ax"
-  BX -> "bx"
-  CX -> "cx"
-  DX -> "dx"
+regText32 :: Reg -> Text
+regText32 = \case
+  SP -> "esp"
+  BP -> "ebp"
+  AX -> "eax"
+  BX -> "ebx"
+  CX -> "ecx"
+  DX -> "edx"
+  SI -> "esi"
+  DI -> "edi"
+  R8 -> "r8d"
+  R9 -> "r9d"
+  R10 -> "r10d"
+  R11 -> "r11d"
+  R12 -> "r12d"
+  R13 -> "r13d"
+  R14 -> "r14d"
+  R15 -> "r15d"
+
+regText64 :: Reg -> Text
+regText64 = \case
+  SP -> "rsp"
+  BP -> "rbp"
+  AX -> "rax"
+  BX -> "rbx"
+  CX -> "rcx"
+  DX -> "rdx"
+  SI -> "rsi"
+  DI -> "rdi"
+  R8 -> "r8"
+  R9 -> "r9"
+  R10 -> "r10"
+  R11 -> "r11"
+  R12 -> "r12"
+  R13 -> "r13"
+  R14 -> "r14"
+  R15 -> "r15"
 
 data Size = Dword | Qword
 
 asmLocText :: Size -> Loc -> Text
 asmLocText s l = case (s, l) of
-  (Dword, R r) -> "e" <> asmRegText r
-  (Qword, R r) -> "r" <> asmRegText r
+  (Dword, R r) -> regText32 r
+  (Qword, R r) -> regText64 r
   (_, I x) -> T.pack (show x)
   (_, L x) -> x
   (_, HdrSizePlus x) -> "obj.hdr_size + " <> T.pack (show x)
-  (_, Index r off) -> szAnn <> " [r" <> asmRegText r <> " + " <> T.pack (show off) <> "]"
+  (_, Index r off) -> szAnn <> " [" <> regText64 r <> " + " <> T.pack (show off) <> "]"
   (_, IndexObj r off) ->
     let off' = case off of
           OType -> "obj.type"
           OSize -> "obj.size"
-          OEval -> "obj.eval"
           OBody x -> "obj.body + " <> T.pack (show x)
-    in szAnn <> " [r" <> asmRegText r <> " + " <> off' <> "]"
+    in szAnn <> " [" <> regText64 r <> " + " <> off' <> "]"
   where szAnn = case s of
           Dword -> "dword"
           Qword -> "qword"
@@ -50,6 +78,7 @@ asmInsnText = \case
   Jmp l -> "jmp " <> asmLocText Qword l
   Label lbl -> lbl <> ":"
   Ret -> "ret"
+  MacEval -> "eval"
 
 asmFuncText :: AsmFunc -> Text
 asmFuncText (AsmFunc name is) =

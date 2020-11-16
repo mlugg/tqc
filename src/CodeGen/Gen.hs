@@ -52,7 +52,7 @@ intWord = fromIntegral
 stackLoc :: StackPos -> Loc
 stackLoc = \case
   TopOff off -> Index SP (8 * intWord off)
-  BottomOff off -> Index BP (8 * (- intWord off - 1))
+  BottomOff off -> Index BP (8 * (- intWord off - 3)) -- 3 = pushed rbp,rax,rbx
 
 genSingle :: PhtnInsn -> Gen (Seq Instruction)
 genSingle = \case
@@ -65,39 +65,40 @@ genSingle = \case
   PPushStack loc -> pure $ Seq.fromList $
     [ Push (stackLoc loc) ]
 
+  PPushGlobl x -> pure $ Seq.fromList $
+    [ Push (L x) ]
+
   PAllocate info ->
-    let (objType, bodyLen, eval) = case info of
-          AllocFun closLen _ -> (L "OBJ_TYPE_FUN", closLen + 1, "eval_fun") -- one extra for entry code
-          AllocData closLen -> (L "OBJ_TYPE_DATA", closLen + 1, "eval_data") -- one extra for constructor id
-          AllocThunk -> (L "OBJ_TYPE_THUNK", 2, "eval_thunk")
-          AllocInd -> (L "OBJ_TYPE_IND", 1, "eval_ind")
+    let (objType, bodyLen) = case info of
+          AllocFun closLen _ -> (L "OBJ_TYPE_FUN", closLen + 1) -- one extra for entry code
+          AllocData closLen -> (L "OBJ_TYPE_DATA", closLen + 1) -- one extra for constructor id
+          AllocThunk -> (L "OBJ_TYPE_THUNK", 2)
+          AllocInd -> (L "OBJ_TYPE_IND", 1)
 
         extra = case info of
-          AllocFun _ entry -> [ Mov8 (IndexObj DX (OBody 0)) (L entry) ]
+          AllocFun _ entry -> [ Mov8 (IndexObj DI (OBody 0)) (L entry) ]
           _ -> []
     in pure $ Seq.fromList $
-        [ Mov8 (R CX) (HdrSizePlus $ 8 * bodyLen)
+        [ Mov8 (R R8) objType
+        , Mov8 (R R9) (I bodyLen)
         , Call (L "alloc")
-        , Push (R DX)
-        , Mov4 (IndexObj DX OType) objType
-        , Mov4 (IndexObj DX OSize) (I bodyLen)
-        , Mov8 (IndexObj DX OEval) (L eval)
+        , Push (R DI)
         ] <> extra
 
   PObjSetPtr obj n val -> pure $ Seq.fromList $
-    [ Mov8 (R CX) (stackLoc obj)
-    , Mov8 (R DX) (stackLoc val)
-    , Mov8 (IndexObj CX (OBody $ 8 * n)) (R DX)
+    [ Mov8 (R R8) (stackLoc obj)
+    , Mov8 (R R9) (stackLoc val)
+    , Mov8 (IndexObj R8 (OBody $ 8 * n)) (R R9)
     ]
 
   PObjSetLit obj n val -> pure $ Seq.fromList $
-    [ Mov8 (R CX) (stackLoc obj)
-    , Mov8 (IndexObj CX (OBody $ 8 * n)) (I val)
+    [ Mov8 (R R8) (stackLoc obj)
+    , Mov8 (IndexObj R8 (OBody $ 8 * n)) (I val)
     ]
 
   PObjGetPtr obj n -> pure $ Seq.fromList $
-    [ Mov8 (R CX) (stackLoc obj)
-    , Push (IndexObj CX (OBody $ 8 * n))
+    [ Mov8 (R R8) (stackLoc obj)
+    , Push (IndexObj R8 (OBody $ 8 * n))
     ]
 
   PObjSwitchLit field alts def -> do
@@ -106,14 +107,14 @@ genSingle = \case
     let numberedAlts :: [(Natural, SwitchAlt)]
         numberedAlts = zip [0..] alts
         src0 = Seq.fromList
-          [ Pop (R CX)
-          , Mov8 (R DX) (IndexObj CX (OBody $ 8 * field))
+          [ Pop (R R8)
+          , Mov8 (R R9) (IndexObj R8 (OBody $ 8 * field))
           ]
 
     src1 <- fmap mconcat $ for numberedAlts $ \(n, SwitchAlt x _) -> do
       let lblName = ".sw" <> swId' <> "c" <> T.pack (show n)
       pure $ Seq.fromList $
-        [ Cmp (R DX) (I x)
+        [ Cmp (R R9) (I x)
         , Je (L lblName)
         ]
 
@@ -137,22 +138,17 @@ genSingle = \case
       [ src0, src1, src2, src3, src4, src5, src6 ]
 
   PEval -> pure $ Seq.fromList $
-    [ Pop (R CX)
-    , Push (R AX)
-    , Push (R BX)
-    , Mov8 (R AX) (R CX)
-    , Call (IndexObj AX OEval)
-    , Pop (R BX)
-    , Pop (R AX)
-    , Push (R CX)
+    [ Pop (R R8)
+    , MacEval
+    , Push (R DI)
     ]
 
   PPop n -> pure $ Seq.fromList $
     [ Add SP (n*8) ]
 
   PReplaceStack dst src -> pure $ Seq.fromList $
-    [ Mov8 (R CX) (stackLoc src)
-    , Mov8 (stackLoc dst) (R CX)
+    [ Mov8 (R R8) (stackLoc src)
+    , Mov8 (stackLoc dst) (R R8)
     ]
 
 genSrc :: PhtnSrc -> Gen (Seq Instruction)
@@ -165,9 +161,15 @@ genFunc (PhtnFunc name src) = do
   where hdr = Seq.fromList
           [ Push (R BP)
           , Mov8 (R BP) (R SP)
+          , Push (R AX)
+          , Push (R BX)
+          , Mov8 (R AX) (R R8)
+          , Mov8 (R BX) (R R9)
           ]
         ftr = Seq.fromList
-          [ Pop (R CX)
+          [ Pop (R DI)
+          , Pop (R BX)
+          , Pop (R AX)
           , Pop (R BP)
           , Ret
           ]
