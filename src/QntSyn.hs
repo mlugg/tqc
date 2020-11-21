@@ -21,12 +21,12 @@ type family Id p where
   Id 'Renamed = RName
   Id 'Typechecked = RName
 
-type family Bind p where
-  Bind 'Parsed = Text
-  Bind 'Renamed = Text
-  Bind 'Typechecked = TcBind
+type family Binder p where
+  Binder 'Parsed = Text
+  Binder 'Renamed = Text
+  Binder 'Typechecked = TcBinder
 
-data TcBind = TcBind Text Type
+data TcBinder = TcBinder Text Type
 
 data Located a = L SrcSpan a
   deriving (Functor, Foldable, Traversable)
@@ -34,35 +34,35 @@ data Located a = L SrcSpan a
 unLoc :: Located a -> a
 unLoc (L _ x) = x
 
-type LExpr p = Located (Expr p)
-type LAlt p = Located (Alt p)
+type LQntExpr p = Located (QntExpr p)
+type LQntAlt p = Located (QntAlt p)
 type LScheme = Located Scheme
 
 -- Expressions {{{
 
-data Expr p
-  = EName (Id p)
-  | ENatLit Natural
-  | EAppl (LExpr p) (LExpr p)
-  | ELambda (Bind p) (LExpr p)
-  | ELet [Binding p] (LExpr p)
-  | ECase (LExpr p) [LAlt p]
+data QntExpr p
+  = QntVar (Id p)
+  | QntNatLit Natural
+  | QntApp (LQntExpr p) (LQntExpr p)
+  | QntLam (Binder p) (LQntExpr p)
+  | QntLet [QntBind p] (LQntExpr p)
+  | QntCase (LQntExpr p) [LQntAlt p]
 
-data Binding p
-  = BindingImpl (Bind p) (LExpr p)
-  | BindingExpl (Bind p) (LExpr p) LScheme
+data QntBind p
+  = QntImpl (Binder p) (LQntExpr p)
+  | QntExpl (Binder p) (LQntExpr p) LScheme
 
-data Pattern
-  = PName Text
-  | PNatLit Natural
-  | PConstr Text [Pattern]
+data QntPat
+  = QntNamePat Text
+  | QntNatLitPat Natural
+  | QntConstrPat Text [QntPat]
 
-data Alt p = Alt Pattern (LExpr p)
+data QntAlt p = QntAlt QntPat (LQntExpr p)
 
-bindingName :: forall p. (IsPass p) => Binding p -> Text
+bindingName :: forall p. (IsPass p) => QntBind p -> Text
 bindingName = \case
-  BindingImpl n _   -> psBindName pr n
-  BindingExpl n _ _ -> psBindName pr n
+  QntImpl n _   -> psBinderName pr n
+  QntExpl n _ _ -> psBinderName pr n
   where pr :: Proxy p
         pr = Proxy
 
@@ -102,7 +102,7 @@ data Kind
 -- }}}
 
 data QntProg p
-  = QntProg [DataDecl p] [Binding p]
+  = QntProg [DataDecl p] [QntBind p]
 
 -- IsPass {{{
 
@@ -112,14 +112,14 @@ data QntProg p
 -- restrict which instances are used. All functions in this class should
 -- be prefixed 'ps' for 'pass'.
 class IsPass p where
-  psPrintId  :: Proxy p -> Id p   -> Text
-  psBindName :: Proxy p -> Bind p -> Text
-  psBindType :: Proxy p -> Bind p -> Maybe Type
+  psPrintId    :: Proxy p -> Id p     -> Text
+  psBinderName :: Proxy p -> Binder p -> Text
+  psBinderType :: Proxy p -> Binder p -> Maybe Type
 
 instance IsPass 'Parsed where
-  psPrintId  _ x = x
-  psBindName _ x = x
-  psBindType _ _ = Nothing
+  psPrintId    _ x = x
+  psBinderName _ x = x
+  psBinderType _ _ = Nothing
 
 instance IsPass 'Renamed where
   psPrintId _ = \case
@@ -127,12 +127,12 @@ instance IsPass 'Renamed where
     LoclName x -> x
     GenName x -> "%" <> x
 
-  psBindName _ x = x
-  psBindType _ _ = Nothing
+  psBinderName _ x = x
+  psBinderType _ _ = Nothing
 
 instance IsPass 'Typechecked where
-  psPrintId  _ = psPrintId (Proxy :: Proxy 'Renamed)
-  psBindName _ (TcBind x _) = x
-  psBindType _ (TcBind _ t) = Just t
+  psPrintId _ = psPrintId (Proxy :: Proxy 'Renamed)
+  psBinderName _ (TcBinder x _) = x
+  psBinderType _ (TcBinder _ t) = Just t
 
 -- }}}

@@ -34,58 +34,57 @@ withLocals new m = Rename $ \locs -> runRename m (new <> locs)
 withLocal :: Text -> Rename a -> Rename a
 withLocal = withLocals . S.singleton
 
-renameExpr :: Expr 'Parsed -> Rename (Expr 'Renamed)
+renameExpr :: QntExpr 'Parsed -> Rename (QntExpr 'Renamed)
 renameExpr = \case
-  EName n -> do
+  QntVar n -> do
     isLocal <- lookupLocal n
     if isLocal
-    then pure $ EName (LoclName n)
+    then pure $ QntVar (LoclName n)
     else findQualified n >>= \case
       Nothing -> throwErr _ -- TODO XXX
-      Just m  -> pure $ EName (QualName (Qual m n))
+      Just m  -> pure $ QntVar (QualName (Qual m n))
 
-  ELet bs body ->
+  QntLet bs body ->
     let names = S.fromList $ bindingName <$> bs
     in withLocals names $ do
       bs' <- for bs $ \b ->
         case b of
-          BindingImpl n e   -> BindingImpl n <$> renameLExpr e
-          BindingExpl n e t -> BindingExpl n <$> renameLExpr e <*> pure t
+          QntImpl n e   -> QntImpl n <$> renameLExpr e
+          QntExpl n e t -> QntExpl n <$> renameLExpr e <*> pure t
 
       body' <- renameLExpr body
 
-      pure $ ELet bs' body'
+      pure $ QntLet bs' body'
 
-
-  ECase e as ->
-    ECase
+  QntCase e as ->
+    QntCase
     <$> renameLExpr e
     <*> traverse renameLAlt as
 
-  ENatLit x -> pure $ ENatLit x
+  QntNatLit x -> pure $ QntNatLit x
 
-  EAppl e0 e1 ->
-    EAppl
+  QntApp e0 e1 ->
+    QntApp
     <$> renameLExpr e0
     <*> renameLExpr e1
 
-  ELambda x e -> withLocal x $
-    ELambda x <$> renameLExpr e
+  QntLam x e -> withLocal x $
+    QntLam x <$> renameLExpr e
 
-renameLExpr :: LExpr 'Parsed -> Rename (LExpr 'Renamed)
+renameLExpr :: LQntExpr 'Parsed -> Rename (LQntExpr 'Renamed)
 renameLExpr = traverse renameExpr
 
-renameAlt :: Alt 'Parsed -> Rename (Alt 'Renamed)
-renameAlt (Alt p e) =
+renameAlt :: QntAlt 'Parsed -> Rename (QntAlt 'Renamed)
+renameAlt (QntAlt p e) =
   let ns = findPatNames p
-  in withLocals ns $ Alt p <$> renameLExpr e
+  in withLocals ns $ QntAlt p <$> renameLExpr e
   where
     findPatNames = \case
-      PName x -> S.singleton x
-      PNatLit _ -> S.empty
-      PConstr _ ps -> foldMap findPatNames ps
+      QntNamePat x -> S.singleton x
+      QntNatLitPat _ -> S.empty
+      QntConstrPat _ ps -> foldMap findPatNames ps
 
-renameLAlt :: LAlt 'Parsed -> Rename (LAlt 'Renamed)
+renameLAlt :: LQntAlt 'Parsed -> Rename (LQntAlt 'Renamed)
 renameLAlt = traverse renameAlt
 
 findQualified :: Text -> Rename (Maybe Module)

@@ -32,23 +32,23 @@ pPrintType = \case
 
   where isSymbolic = not . isAlpha . T.head
 
-pPrintPat :: Pattern -> Text
+pPrintPat :: QntPat -> Text
 pPrintPat = \case
-  PName x -> x
-  PNatLit x -> T.pack $ show x
-  PConstr c ps -> "(" <> c <> " " <> T.intercalate " " (pPrintPat <$> ps) <> ")"
+  QntNamePat x -> x
+  QntNatLitPat x -> T.pack $ show x
+  QntConstrPat c ps -> "(" <> c <> " " <> T.intercalate " " (pPrintPat <$> ps) <> ")"
 
-pPrintExpr :: forall p. (IsPass p) => Expr p -> Text
+pPrintExpr :: forall p. (IsPass p) => QntExpr p -> Text
 pPrintExpr = \case
-  EName x ->
+  QntVar x ->
     let n = psPrintId pr x
     in if isSymbolic n
        then "(" <> n <> ")"
        else n
 
-  ENatLit x -> T.pack $ show x
+  QntNatLit x -> T.pack $ show x
 
-  EAppl (L _ e0) (L _ e1) -> mconcat
+  QntApp (L _ e0) (L _ e1) -> mconcat
     [ "("
     , pPrintExpr e0
     , " "
@@ -56,22 +56,22 @@ pPrintExpr = \case
     , ")"
     ]
 
-  ELambda x (L _ e) -> mconcat
+  QntLam x (L _ e) -> mconcat
     [ "(λ "
-    , pPrintBind pr x
+    , pPrintBinder pr x
     , " -> "
     , pPrintExpr e
     , ")"
     ]
 
-  ELet bs (L _ e) -> mconcat
+  QntLet bs (L _ e) -> mconcat
     [ "let { "
-    , inter pPrintBinding bs
+    , inter pPrintBind bs
     , " } in "
     , pPrintExpr e
     ]
 
-  ECase (L _ e) as -> mconcat
+  QntCase (L _ e) as -> mconcat
     [ "case "
     , pPrintExpr e
     , " of { "
@@ -83,39 +83,39 @@ pPrintExpr = \case
         isSymbolic = not . isAlpha . T.head
         inter f xs = T.intercalate "; " (f <$> xs)
 
-pPrintAlt :: (IsPass p) => Alt p -> Text
-pPrintAlt (Alt pat (L _ e)) = mconcat
+pPrintAlt :: (IsPass p) => QntAlt p -> Text
+pPrintAlt (QntAlt pat (L _ e)) = mconcat
   [ pPrintPat pat
   , " -> "
   , pPrintExpr e
   ]
 
-pPrintBinding :: forall p. (IsPass p) => Binding p -> Text
-pPrintBinding = \case
-  BindingImpl x (L _ e) -> mconcat
-    [ pPrintBind pr x
+pPrintBind :: forall p. (IsPass p) => QntBind p -> Text
+pPrintBind = \case
+  QntImpl x (L _ e) -> mconcat
+    [ pPrintBinder pr x
     , " = "
     , pPrintExpr e
     ]
 
-  BindingExpl x (L _ e) (L _ t) -> mconcat
-    [ pPrintBind pr x
+  QntExpl x (L _ e) (L _ t) -> mconcat
+    [ pPrintBinder pr x
     , " :: "
     , pPrintScheme t
     , "; "
-    , pPrintBind pr x
+    , pPrintBinder pr x
     , " = "
     , pPrintExpr e
     ]
   where pr :: Proxy p
         pr = Proxy
 
-pPrintBind :: (IsPass p) => Proxy p -> Bind p -> Text
-pPrintBind pr b = case psBindType pr b of
-  Nothing -> psBindName pr b
+pPrintBinder :: (IsPass p) => Proxy p -> Binder p -> Text
+pPrintBinder pr b = case psBinderType pr b of
+  Nothing -> psBinderName pr b
   Just t  -> mconcat
     [ "("
-    , psBindName pr b
+    , psBinderName pr b
     , " :: "
     , pPrintType t
     , ")"

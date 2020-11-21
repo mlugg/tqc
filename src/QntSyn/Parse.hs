@@ -120,7 +120,7 @@ dataConstr = DataConstr <$> identUpperOp <*> many type_
 
 -- If a binding has a type signature, it must immediately precede the
 -- binding
-binding :: Parser (Binding 'Parsed)
+binding :: Parser (QntBind 'Parsed)
 binding = do
   sig <- optional $ semiTerm typeSig
   (x, e) <- definition
@@ -128,10 +128,10 @@ binding = do
   case sig of
     Just (y, t) ->
       if x == y
-      then pure $ BindingExpl x e t
+      then pure $ QntExpl x e t
       else fail "Type signature is not followed by an accompanying binding"
 
-    Nothing -> pure $ BindingImpl x e
+    Nothing -> pure $ QntImpl x e
 
 -- binding helpers {{{
 
@@ -140,7 +140,7 @@ typeSig = label "type signature" $ (,)
   <$> try (identLower <* reservedOp "::")
   <*> typeScheme
 
-definition :: Parser (Text, LExpr 'Parsed)
+definition :: Parser (Text, LQntExpr 'Parsed)
 definition = label "definition" $ (,)
   <$> try (identLower <* reservedOp "=")
   <*> expr
@@ -182,34 +182,34 @@ typeScheme = located $ polyType <|> (Scheme S.empty <$> type_)
 
 -- Expressions {{{
 
-expr :: Parser (LExpr 'Parsed)
+expr :: Parser (LQntExpr 'Parsed)
 expr = makeExprParser exprTerm
-  [ [ InfixL $ pure $ \ f@(L fSpan _) x@(L xSpan _) -> L (fSpan <> xSpan) (EAppl f x) ]
+  [ [ InfixL $ pure $ \ f@(L fSpan _) x@(L xSpan _) -> L (fSpan <> xSpan) (QntApp f x) ]
   ]
 
-exprTerm :: Parser (LExpr 'Parsed)
+exprTerm :: Parser (LQntExpr 'Parsed)
 exprTerm = try (parens expr)
-  <|> located (EName <$> identAnyOp)
-  <|> located (ENatLit <$> decimal)
-  <|> located (ELambda <$> (reservedOp "\\" *> identLower) <*> (reservedOp "->" *> expr))
+  <|> located (QntVar <$> identAnyOp)
+  <|> located (QntNatLit <$> decimal)
+  <|> located (QntLam <$> (reservedOp "\\" *> identLower) <*> (reservedOp "->" *> expr))
   <|> let_
   <|> case_
 
-let_ :: Parser (LExpr 'Parsed)
-let_ = located $ ELet <$> (reserved "let" *> braces (binding `sepEndBy` semi)) <*> (reserved "in" *> expr)
+let_ :: Parser (LQntExpr 'Parsed)
+let_ = located $ QntLet <$> (reserved "let" *> braces (binding `sepEndBy` semi)) <*> (reserved "in" *> expr)
 
-case_ :: Parser (LExpr 'Parsed)
-case_ = located $ ECase <$> (reserved "case" *> expr) <*> (reserved "of" *> braces (branch `sepEndBy` semi))
-  where branch = located $ Alt <$> pattern <*> (reserved "->" *> expr)
+case_ :: Parser (LQntExpr 'Parsed)
+case_ = located $ QntCase <$> (reserved "case" *> expr) <*> (reserved "of" *> braces (branch `sepEndBy` semi))
+  where branch = located $ QntAlt <$> pattern <*> (reserved "->" *> expr)
 
 -- }}}
 
 -- Patterns {{{
 
-pattern :: Parser Pattern
+pattern :: Parser QntPat
 pattern = parens pattern
-  <|> PName <$> identLower
-  <|> PNatLit <$> decimal
-  <|> PConstr <$> identUpperOp <*> many pattern
+  <|> QntNamePat <$> identLower
+  <|> QntNatLitPat <$> decimal
+  <|> QntConstrPat <$> identUpperOp <*> many pattern
 
 -- }}}
