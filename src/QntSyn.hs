@@ -19,7 +19,6 @@ data RName
   = QualName Module Text
   | LoclName Text
   | GenName Text
-  | Name Text
 
 data QualType = QualType Module Text
 
