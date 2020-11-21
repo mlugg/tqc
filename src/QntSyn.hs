@@ -23,6 +23,13 @@ type family Id p where
   Id 'Renamed = RName
   Id 'Typechecked = RName
 
+type family Bind p where
+  Bind 'Parsed = Text
+  Bind 'Renamed = Text
+  Bind 'Typechecked = TcBind
+
+data TcBind = TcBind Text Type
+
 data RName
   = QualName Module Text
   | LoclName Text
@@ -30,6 +37,9 @@ data RName
 
 data Located a = L SrcSpan a
   deriving (Functor, Foldable, Traversable)
+
+liftL :: (a -> b) -> Located a -> b
+liftL f (L _ x) = f x
 
 type LExpr p = Located (Expr p)
 type LAlt p = Located (Alt p)
@@ -41,13 +51,13 @@ data Expr p
   = EName (Id p)
   | ENatLit Natural
   | EAppl (LExpr p) (LExpr p)
-  | ELambda Text (LExpr p)
+  | ELambda (Bind p) (LExpr p)
   | ELet [Binding p] (LExpr p)
   | ECase (LExpr p) [LAlt p]
 
 data Binding p
-  = BindingImpl Text (LExpr p)
-  | BindingExpl Text (LExpr p) LScheme
+  = BindingImpl (Bind p) (LExpr p)
+  | BindingExpl (Bind p) (LExpr p) LScheme
 
 data Pattern
   = PName Text
@@ -56,10 +66,12 @@ data Pattern
 
 data Alt p = Alt Pattern (LExpr p)
 
-bindName :: Binding p -> Text
-bindName = \case
-  BindingImpl n _   -> n
-  BindingExpl n _ _ -> n
+bindingName :: forall p. (IsPass p) => Binding p -> Text
+bindingName = \case
+  BindingImpl n _   -> psBindName pr n
+  BindingExpl n _ _ -> psBindName pr n
+  where pr :: Proxy p
+        pr = Proxy
 
 -- }}}
 
@@ -99,6 +111,8 @@ data Kind
 data QntProg p
   = QntProg [DataDecl p] [Binding p]
 
+-- Pretty-printing {{{
+
 pPrintScheme :: Scheme -> Text
 pPrintScheme (Scheme univs t) =
   if null univs
@@ -128,41 +142,117 @@ pPrintPat = \case
   PNatLit x -> T.pack $ show x
   PConstr c ps -> "(" <> c <> " " <> T.intercalate " " (pPrintPat <$> ps) <> ")"
 
--- Expression pretty-printing {{{
-
-class PrettyExpr p where
-  pPrintId :: Proxy p -> Id p -> Text
-
-pPrintExpr :: forall p. (PrettyExpr p) => Expr p -> Text
+pPrintExpr :: forall p. (IsPass p) => Expr p -> Text
 pPrintExpr = \case
   EName x ->
-    let x' = pPrintId (Proxy :: Proxy p) x
-    in if isSymbolic x' then "(" <> x' <> ")" else x'
+    let n = psPPrintId pr x
+    in if isSymbolic n
+       then "(" <> n <> ")"
+       else n
+
   ENatLit x -> T.pack $ show x
-  EAppl (L _ e0) (L _ e1) -> "(" <> go e0 <> " " <> go e1 <> ")"
-  ELambda x (L _ e) -> "(λ " <> x <> " -> " <> go e <> ")"
-  ELet bs (L _ e) -> "let {" <> inter pPrintBinding bs <> "} in " <> go e
-  ECase (L _ e) as -> "case " <> go e <> " of {" <> inter pPrintAlt as <> "}"
-  where isSymbolic = not . isAlpha . T.head
+
+  EAppl (L _ e0) (L _ e1) -> mconcat
+    [ "("
+    , pPrintExpr e0
+    , " "
+    , pPrintExpr e1
+    , ")"
+    ]
+
+  ELambda x (L _ e) -> mconcat
+    [ "(λ "
+    , psPPrintBind pr x
+    , " -> "
+    , pPrintExpr e
+    , ")"
+    ]
+
+  ELet bs (L _ e) -> mconcat
+    [ "let { "
+    , inter pPrintBinding bs
+    , " } in "
+    , pPrintExpr e
+    ]
+
+  ECase (L _ e) as -> mconcat
+    [ "case "
+    , pPrintExpr e
+    , " of { "
+    , inter (liftL pPrintAlt) as
+    , " }"
+    ]
+  where pr :: Proxy p
+        pr = Proxy
+        isSymbolic = not . isAlpha . T.head
         inter f xs = T.intercalate "; " (f <$> xs)
-        go = pPrintExpr
 
-instance PrettyExpr 'Parsed where
-  pPrintId _ x = x
+pPrintAlt :: (IsPass p) => Alt p -> Text
+pPrintAlt (Alt pat (L _ e)) = mconcat
+  [ pPrintPat pat
+  , " -> "
+  , pPrintExpr e
+  ]
 
-instance PrettyExpr 'Renamed where
-  pPrintId _ = \case
+pPrintBinding :: forall p. (IsPass p) => Binding p -> Text
+pPrintBinding = \case
+  BindingImpl x (L _ e) -> mconcat
+    [ psPPrintBind pr x
+    , " = "
+    , pPrintExpr e
+    ]
+
+  BindingExpl x (L _ e) (L _ t) -> mconcat
+    [ psPPrintBind pr x
+    , " :: "
+    , pPrintScheme t
+    , "; "
+    , psPPrintBind pr x
+    , " = "
+    , pPrintExpr e
+    ]
+  where pr :: Proxy p
+        pr = Proxy
+
+-- }}}
+
+-- IsPass {{{
+
+-- There are some utility functions that we want to work for all passes
+-- of the AST. Because the type families involved aren't injective, this
+-- is a bit fiddly; we define this typeclass which uses Proxy to
+-- restrict which instances are used. All functions in this class should
+-- be prefixed 'ps' for 'pass'.
+class IsPass p where
+  psPPrintId   :: Proxy p -> Id p   -> Text
+  psPPrintBind :: Proxy p -> Bind p -> Text
+  psBindName   :: Proxy p -> Bind p -> Text
+
+instance IsPass 'Parsed where
+  psPPrintId   _ x = x
+  psPPrintBind _ x = x
+  psBindName   _ x = x
+
+instance IsPass 'Renamed where
+  psPPrintId _ = \case
     QualName (Module ms) x -> T.intercalate "." ms <> "." <> x
     LoclName x -> x
     GenName x -> "%" <> x
 
+  psPPrintBind _ x = x
 
-pPrintAlt :: (PrettyExpr p) => LAlt p -> Text
-pPrintAlt (L _ (Alt pat (L _ e))) = pPrintPat pat <> " -> " <> pPrintExpr e
+  psBindName _ x = x
 
-pPrintBinding :: (PrettyExpr p) => Binding p -> Text
-pPrintBinding = \case
-  BindingImpl x (L _ e) -> x <> " = " <> pPrintExpr e
-  BindingExpl x (L _ e) (L _ t) -> x <> " :: " <> pPrintScheme t <> "; " <> x <> " = " <> pPrintExpr e
+instance IsPass 'Typechecked where
+  psPPrintId _ = psPPrintId (Proxy :: Proxy 'Renamed)
+  psPPrintBind _ (TcBind x ty) = mconcat
+    [ "("
+    , x
+    , " :: "
+    , pPrintType ty
+    , ")"
+    ]
+
+  psBindName _ (TcBind x _) = x
 
 -- }}}

@@ -45,7 +45,7 @@ renameExpr = \case
       Just m  -> pure $ EName (QualName m n)
 
   ELet bs body ->
-    let names = S.fromList $ bindName <$> bs
+    let names = S.fromList $ bindingName <$> bs
     in withLocals names $ do
       bs' <- for bs $ \b ->
         case b of
