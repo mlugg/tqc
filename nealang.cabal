@@ -10,7 +10,7 @@ build-type:          Simple
 
 executable nealang
   main-is:             Main.hs
-  other-modules:       Tqc, QntSyn, QntSyn.Parse, QntSyn.Rename, PhtnSyn, NclToPhtn, NclSyn, CodeGen.Asm, CodeGen.Gen, CodeGen.AsmText
+  other-modules:       Tqc, QntSyn, QntSyn.Pretty, QntSyn.Parse, QntSyn.Rename, PhtnSyn, NclToPhtn, NclSyn, CodeGen.Asm, CodeGen.Gen, CodeGen.AsmText
   -- other-extensions:
   build-depends:       base ^>=4.13.0.0, megaparsec ^>=9.0.1, text ^>=1.2.4.0, parser-combinators ^>=1.2.1, containers ^>=0.6.4.1
   hs-source-dirs:      src

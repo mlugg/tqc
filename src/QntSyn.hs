@@ -10,12 +10,10 @@
 module QntSyn where
 
 import Tqc
-import Data.Char
 import Data.Text (Text)
 import qualified Data.Text as T
 import Numeric.Natural
 import Data.Set (Set)
-import qualified Data.Set as S
 import Data.Proxy
 
 type family Id p where
@@ -106,111 +104,6 @@ data Kind
 data QntProg p
   = QntProg [DataDecl p] [Binding p]
 
--- Pretty-printing {{{
-
-pPrintScheme :: Scheme -> Text
-pPrintScheme (Scheme univs t) =
-  if null univs
-  then pPrintType t
-  else "∀" <> T.intercalate " " (S.elems univs) <> " . " <> pPrintType t
-
-pPrintType :: Type -> Text
-pPrintType = \case
-  TApp (TApp (TName "->") x) y -> "(" <> pPrintType x <> " -> " <> pPrintType y <> ")"
-
-  TName x ->
-    if isSymbolic x
-    then "(" <> x <> ")"
-    else x
-
-  TVar x -> x
-
-  TUnif x -> "α" <> T.pack (show x)
-
-  TApp x y -> "(" <> pPrintType x <> " " <> pPrintType y <> ")"
-
-  where isSymbolic = not . isAlpha . T.head
-
-pPrintPat :: Pattern -> Text
-pPrintPat = \case
-  PName x -> x
-  PNatLit x -> T.pack $ show x
-  PConstr c ps -> "(" <> c <> " " <> T.intercalate " " (pPrintPat <$> ps) <> ")"
-
-pPrintExpr :: forall p. (IsPass p) => Expr p -> Text
-pPrintExpr = \case
-  EName x ->
-    let n = psPPrintId pr x
-    in if isSymbolic n
-       then "(" <> n <> ")"
-       else n
-
-  ENatLit x -> T.pack $ show x
-
-  EAppl (L _ e0) (L _ e1) -> mconcat
-    [ "("
-    , pPrintExpr e0
-    , " "
-    , pPrintExpr e1
-    , ")"
-    ]
-
-  ELambda x (L _ e) -> mconcat
-    [ "(λ "
-    , psPPrintBind pr x
-    , " -> "
-    , pPrintExpr e
-    , ")"
-    ]
-
-  ELet bs (L _ e) -> mconcat
-    [ "let { "
-    , inter pPrintBinding bs
-    , " } in "
-    , pPrintExpr e
-    ]
-
-  ECase (L _ e) as -> mconcat
-    [ "case "
-    , pPrintExpr e
-    , " of { "
-    , inter (pPrintAlt . unLoc) as
-    , " }"
-    ]
-  where pr :: Proxy p
-        pr = Proxy
-        isSymbolic = not . isAlpha . T.head
-        inter f xs = T.intercalate "; " (f <$> xs)
-
-pPrintAlt :: (IsPass p) => Alt p -> Text
-pPrintAlt (Alt pat (L _ e)) = mconcat
-  [ pPrintPat pat
-  , " -> "
-  , pPrintExpr e
-  ]
-
-pPrintBinding :: forall p. (IsPass p) => Binding p -> Text
-pPrintBinding = \case
-  BindingImpl x (L _ e) -> mconcat
-    [ psPPrintBind pr x
-    , " = "
-    , pPrintExpr e
-    ]
-
-  BindingExpl x (L _ e) (L _ t) -> mconcat
-    [ psPPrintBind pr x
-    , " :: "
-    , pPrintScheme t
-    , "; "
-    , psPPrintBind pr x
-    , " = "
-    , pPrintExpr e
-    ]
-  where pr :: Proxy p
-        pr = Proxy
-
--- }}}
-
 -- IsPass {{{
 
 -- There are some utility functions that we want to work for all passes
@@ -219,35 +112,27 @@ pPrintBinding = \case
 -- restrict which instances are used. All functions in this class should
 -- be prefixed 'ps' for 'pass'.
 class IsPass p where
-  psPPrintId   :: Proxy p -> Id p   -> Text
-  psPPrintBind :: Proxy p -> Bind p -> Text
-  psBindName   :: Proxy p -> Bind p -> Text
+  psPrintId  :: Proxy p -> Id p   -> Text
+  psBindName :: Proxy p -> Bind p -> Text
+  psBindType :: Proxy p -> Bind p -> Maybe Type
 
 instance IsPass 'Parsed where
-  psPPrintId   _ x = x
-  psPPrintBind _ x = x
-  psBindName   _ x = x
+  psPrintId  _ x = x
+  psBindName _ x = x
+  psBindType _ _ = Nothing
 
 instance IsPass 'Renamed where
-  psPPrintId _ = \case
+  psPrintId _ = \case
     QualName (Qual (Module ms) x) -> T.intercalate "." ms <> "." <> x
     LoclName x -> x
     GenName x -> "%" <> x
 
-  psPPrintBind _ x = x
-
   psBindName _ x = x
+  psBindType _ _ = Nothing
 
 instance IsPass 'Typechecked where
-  psPPrintId _ = psPPrintId (Proxy :: Proxy 'Renamed)
-  psPPrintBind _ (TcBind x ty) = mconcat
-    [ "("
-    , x
-    , " :: "
-    , pPrintType ty
-    , ")"
-    ]
-
+  psPrintId  _ = psPrintId (Proxy :: Proxy 'Renamed)
   psBindName _ (TcBind x _) = x
+  psBindType _ (TcBind _ t) = Just t
 
 -- }}}
