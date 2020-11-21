@@ -33,8 +33,8 @@ data TcBind = TcBind Text Type
 data Located a = L SrcSpan a
   deriving (Functor, Foldable, Traversable)
 
-liftL :: (a -> b) -> Located a -> b
-liftL f (L _ x) = f x
+unLoc :: Located a -> a
+unLoc (L _ x) = x
 
 type LExpr p = Located (Expr p)
 type LAlt p = Located (Alt p)
@@ -174,7 +174,7 @@ pPrintExpr = \case
     [ "case "
     , pPrintExpr e
     , " of { "
-    , inter (liftL pPrintAlt) as
+    , inter (pPrintAlt . unLoc) as
     , " }"
     ]
   where pr :: Proxy p
