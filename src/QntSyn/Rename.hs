@@ -42,7 +42,7 @@ renameExpr = \case
     then pure $ EName (LoclName n)
     else findQualified n >>= \case
       Nothing -> throwErr _ -- TODO XXX
-      Just m  -> pure $ EName (QualName m n)
+      Just m  -> pure $ EName (QualName (Qual m n))
 
   ELet bs body ->
     let names = S.fromList $ bindingName <$> bs

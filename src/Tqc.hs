@@ -62,3 +62,10 @@ instance Semigroup SrcSpan where
 
 newtype Module = Module [Text]
   deriving (Show, Eq)
+
+data Qual = Qual Module Text
+
+data RName
+  = QualName Qual
+  | LoclName Text
+  | GenName Text

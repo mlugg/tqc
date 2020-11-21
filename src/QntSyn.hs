@@ -30,11 +30,6 @@ type family Bind p where
 
 data TcBind = TcBind Text Type
 
-data RName
-  = QualName Module Text
-  | LoclName Text
-  | GenName Text
-
 data Located a = L SrcSpan a
   deriving (Functor, Foldable, Traversable)
 
@@ -235,7 +230,7 @@ instance IsPass 'Parsed where
 
 instance IsPass 'Renamed where
   psPPrintId _ = \case
-    QualName (Module ms) x -> T.intercalate "." ms <> "." <> x
+    QualName (Qual (Module ms) x) -> T.intercalate "." ms <> "." <> x
     LoclName x -> x
     GenName x -> "%" <> x
 
