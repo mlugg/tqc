@@ -21,8 +21,8 @@ import qualified Data.Set as S
 
 type Parser = Parsec Void Text
 
-locate :: Parser a -> Parser (Located a)
-locate m = do
+located :: Parser a -> Parser (Located a)
+located m = do
   start <- getSourcePos
   x <- m
   end <- getSourcePos
@@ -172,7 +172,7 @@ typeTerm = parens type_
   <|> TVar  <$> identLower
 
 typeScheme :: Parser LScheme
-typeScheme = locate $ polyType <|> (Scheme S.empty <$> type_)
+typeScheme = located $ polyType <|> (Scheme S.empty <$> type_)
   where
     polyType = Scheme
       <$> (reserved "forall" *> (S.fromList <$> some identLower))
@@ -189,18 +189,18 @@ expr = makeExprParser exprTerm
 
 exprTerm :: Parser (LExpr 'Parsed)
 exprTerm = try (parens expr)
-  <|> locate (EName <$> identAnyOp)
-  <|> locate (ENatLit <$> decimal)
-  <|> locate (ELambda <$> (reservedOp "\\" *> identLower) <*> (reservedOp "->" *> expr))
+  <|> located (EName <$> identAnyOp)
+  <|> located (ENatLit <$> decimal)
+  <|> located (ELambda <$> (reservedOp "\\" *> identLower) <*> (reservedOp "->" *> expr))
   <|> let_
   <|> case_
 
 let_ :: Parser (LExpr 'Parsed)
-let_ = locate $ ELet <$> (reserved "let" *> braces (binding `sepEndBy` semi)) <*> (reserved "in" *> expr)
+let_ = located $ ELet <$> (reserved "let" *> braces (binding `sepEndBy` semi)) <*> (reserved "in" *> expr)
 
 case_ :: Parser (LExpr 'Parsed)
-case_ = locate $ ECase <$> (reserved "case" *> expr) <*> (reserved "of" *> braces (branch `sepEndBy` semi))
-  where branch = locate $ Alt <$> pattern <*> (reserved "->" *> expr)
+case_ = located $ ECase <$> (reserved "case" *> expr) <*> (reserved "of" *> braces (branch `sepEndBy` semi))
+  where branch = located $ Alt <$> pattern <*> (reserved "->" *> expr)
 
 -- }}}
 
