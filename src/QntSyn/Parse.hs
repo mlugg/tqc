@@ -1,10 +1,10 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, DataKinds, Safe #-}
 -- TODO: trustworthy?
 
 module QntSyn.Parse where
 
 import QntSyn
-
+import Tqc
 import Data.Void
 import Control.Monad
 import Numeric.Natural
@@ -21,6 +21,9 @@ import Control.Monad.Combinators.Expr
 import qualified Data.Set as S
 
 type Parser = Parsec Void Text
+
+locate :: Parser a -> Parser (Located a)
+locate = fmap (L SrcSpan)
 
 -- Utility parsers {{{
 
@@ -91,7 +94,7 @@ semiTerm x = x <* semi
 -- Top-level parsers {{{
 
 -- Data declarations have the form `data Type a b = Foo a (List b)`
-dataDecl :: Parser DataDecl
+dataDecl :: Parser (DataDecl 'Parsed)
 dataDecl = DataDecl
   <$> (reserved "data" *> identUpperOp)
   <*> many typeParam
@@ -107,14 +110,14 @@ typeParam = flip TyParam KStar <$> identLower
 
 -- A data constructor is just the constructor name followed by the types
 -- of its parameters
-dataConstr :: Parser DataConstr
+dataConstr :: Parser (DataConstr 'Parsed)
 dataConstr = DataConstr <$> identUpperOp <*> many type_
 
 -- }}}
 
 -- If a binding has a type signature, it must immediately precede the
 -- binding
-binding :: Parser Binding
+binding :: Parser (Binding 'Parsed)
 binding = do
   sig <- optional $ semiTerm typeSig
   (x, e) <- definition
@@ -129,12 +132,12 @@ binding = do
 
 -- binding helpers {{{
 
-typeSig :: Parser (Text, TypeScheme)
+typeSig :: Parser (Text, LScheme)
 typeSig = label "type signature" $ (,)
   <$> try (identLower <* reservedOp "::")
   <*> typeScheme
 
-definition :: Parser (Text, Expr)
+definition :: Parser (Text, LExpr 'Parsed)
 definition = label "definition" $ (,)
   <$> try (identLower <* reservedOp "=")
   <*> expr
@@ -165,10 +168,10 @@ typeTerm = parens type_
   <|> TName <$> identUpperOp
   <|> TVar  <$> identLower
 
-typeScheme :: Parser TypeScheme
-typeScheme = polyType <|> (TypeScheme S.empty <$> type_)
+typeScheme :: Parser LScheme
+typeScheme = locate $ polyType <|> (Scheme S.empty <$> type_)
   where
-    polyType = TypeScheme
+    polyType = Scheme
       <$> (reserved "forall" *> (S.fromList <$> some identLower))
       <*> (reservedOp "." *> type_)
 
@@ -176,34 +179,34 @@ typeScheme = polyType <|> (TypeScheme S.empty <$> type_)
 
 -- Expressions {{{
 
-expr :: Parser Expr
+expr :: Parser (LExpr 'Parsed)
 expr = makeExprParser exprTerm
-  [ [ InfixL $ pure EAppl ]
+  [ [ InfixL $ pure $ \ f@(L fSpan _) x@(L xSpan _) -> L fSpan (EAppl f x) ] -- XXX TODO CORRECT SPAN
   ]
 
-exprTerm :: Parser Expr
-exprTerm
-    = try (parens expr)
-  <|> EName <$> identAnyOp
-  <|> ENatLit <$> decimal
-  <|> ELambda <$> (reservedOp "\\" *> identLower) <*> (reservedOp "->" *> expr)
+exprTerm :: Parser (LExpr 'Parsed)
+exprTerm = try (parens expr)
+  <|> locate (EName <$> identAnyOp)
+  <|> locate (ENatLit <$> decimal)
+  <|> locate (ELambda <$> (reservedOp "\\" *> identLower) <*> (reservedOp "->" *> expr))
   <|> let_
   <|> case_
 
-let_ :: Parser Expr
-let_ = ELet <$> (reserved "let" *> braces (binding `sepEndBy` semi)) <*> (reserved "in" *> expr)
+let_ :: Parser (LExpr 'Parsed)
+let_ = locate $ ELet <$> (reserved "let" *> braces (binding `sepEndBy` semi)) <*> (reserved "in" *> expr)
 
-case_ :: Parser Expr
-case_ = ECase <$> (reserved "case" *> expr) <*> (reserved "of" *> braces (branch `sepEndBy` semi))
-  where branch = (,) <$> pattern <*> (reserved "->" *> expr)
+case_ :: Parser (LExpr 'Parsed)
+case_ = locate $ ECase <$> (reserved "case" *> expr) <*> (reserved "of" *> braces (branch `sepEndBy` semi))
+  where branch = locate $ Alt <$> pattern <*> (reserved "->" *> expr)
 
 -- }}}
 
 -- Patterns {{{
 
 pattern :: Parser Pattern
-pattern = PName <$> identLower
+pattern = parens pattern
+  <|> PName <$> identLower
   <|> PNatLit <$> decimal
-  <|> PConstr <$> identUpperOp <*> many identLower
+  <|> PConstr <$> identUpperOp <*> many pattern
 
 -- }}}

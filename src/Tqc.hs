@@ -4,6 +4,7 @@ module Tqc where
 
 import Data.Sequence
 import Control.Monad
+import Data.Text (Text)
 
 data CompileError
   = NumRangeErr
@@ -45,3 +46,15 @@ instance TqcMonad Tqc where
   throwErr e = Tqc $ \_ -> Left e
   logWarn w = Tqc $ \_ -> Right ((), pure w)
   lift = id
+
+data TqcPass
+  = Parsed
+  | Renamed
+  | Typechecked
+  deriving (Show, Eq)
+
+data SrcSpan = SrcSpan
+  deriving (Show, Eq)
+
+newtype Module = Module [Text]
+  deriving (Show, Eq)
