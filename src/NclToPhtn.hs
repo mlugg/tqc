@@ -71,7 +71,7 @@ withEnv f m = Compile $ runCompile m . f
 
 lookupVar :: RName -> Compile ()
 lookupVar = \case
-  QualName (Qual (Module m) x) -> tellSrc $ pure $ PPushGlobl ("obj_" <> T.intercalate "." m <> "." <> "x")
+  QualName (Qual (Module m) x) -> tellSrc $ pure $ PPushGlobl ("obj_" <> T.intercalate "." m <> "." <> x)
   LoclName x -> lookupLocal x
   GenName x  -> lookupLocal x
 
