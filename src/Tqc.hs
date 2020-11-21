@@ -5,6 +5,7 @@ module Tqc where
 import Data.Sequence
 import Control.Monad
 import Data.Text (Text)
+import Text.Megaparsec.Pos (SourcePos)
 
 data CompileError
   = NumRangeErr
@@ -53,8 +54,11 @@ data TqcPass
   | Typechecked
   deriving (Show, Eq)
 
-data SrcSpan = SrcSpan
+data SrcSpan = SrcSpan SourcePos SourcePos
   deriving (Show, Eq)
+
+instance Semigroup SrcSpan where
+  SrcSpan s0 e0 <> SrcSpan s1 e1 = SrcSpan (min s0 s1) (max e0 e1)
 
 newtype Module = Module [Text]
   deriving (Show, Eq)

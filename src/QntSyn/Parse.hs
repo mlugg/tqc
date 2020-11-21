@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings, DataKinds, Safe #-}
--- TODO: trustworthy?
 
 module QntSyn.Parse where
 
@@ -23,7 +22,11 @@ import qualified Data.Set as S
 type Parser = Parsec Void Text
 
 locate :: Parser a -> Parser (Located a)
-locate = fmap (L SrcSpan)
+locate m = do
+  start <- getSourcePos
+  x <- m
+  end <- getSourcePos
+  pure $ L (SrcSpan start end) x
 
 -- Utility parsers {{{
 
@@ -181,7 +184,7 @@ typeScheme = locate $ polyType <|> (Scheme S.empty <$> type_)
 
 expr :: Parser (LExpr 'Parsed)
 expr = makeExprParser exprTerm
-  [ [ InfixL $ pure $ \ f@(L fSpan _) x@(L xSpan _) -> L fSpan (EAppl f x) ] -- XXX TODO CORRECT SPAN
+  [ [ InfixL $ pure $ \ f@(L fSpan _) x@(L xSpan _) -> L (fSpan <> xSpan) (EAppl f x) ]
   ]
 
 exprTerm :: Parser (LExpr 'Parsed)
