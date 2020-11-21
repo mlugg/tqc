@@ -1,4 +1,11 @@
-{-# LANGUAGE Safe, LambdaCase, OverloadedStrings, TypeFamilies, DataKinds, PolyKinds, DeriveTraversable #-}
+{-# LANGUAGE Safe                #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE PolyKinds           #-}
+{-# LANGUAGE DeriveTraversable   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module QntSyn where
 
@@ -9,6 +16,7 @@ import qualified Data.Text as T
 import Numeric.Natural
 import Data.Set (Set)
 import qualified Data.Set as S
+import Data.Proxy
 
 type family Id p where
   Id 'Parsed = Text
@@ -19,8 +27,6 @@ data RName
   = QualName Module Text
   | LoclName Text
   | GenName Text
-
-data QualType = QualType Module Text
 
 data Located a = L SrcSpan a
   deriving (Functor, Foldable, Traversable)
@@ -116,27 +122,47 @@ pPrintType = \case
 
   where isSymbolic = not . isAlpha . T.head
 
-pPrintExpr :: Expr 'Parsed -> Text
-pPrintExpr = \case
-  EName x -> if isSymbolic x then "(" <> x <> ")" else x
-  ENatLit x -> T.pack $ show x
-  EAppl (L _ e0) (L _ e1) -> "(" <> pPrintExpr e0 <> " " <> pPrintExpr e1 <> ")"
-  ELambda x (L _ e) -> "λ " <> x <> " -> " <> pPrintExpr e
-  ELet bs (L _ e) -> "let {" <> inter pPrintBinding bs <> "} in " <> pPrintExpr e
-  ECase (L _ e) as -> "case " <> pPrintExpr e <> " of {" <> inter pPrintAlt as <> "}"
-  where isSymbolic = not . isAlpha . T.head
-        inter f xs = T.intercalate "; " (f <$> xs)
-
-pPrintAlt :: LAlt 'Parsed -> Text
-pPrintAlt (L _ (Alt pat (L _ e))) = pPrintPat pat <> " -> " <> pPrintExpr e
-
-pPrintBinding :: Binding 'Parsed -> Text
-pPrintBinding = \case
-  BindingImpl x (L _ e) -> x <> " = " <> pPrintExpr e
-  BindingExpl x (L _ e) (L _ t) -> x <> " :: " <> pPrintScheme t <> "; " <> x <> " = " <> pPrintExpr e
-
 pPrintPat :: Pattern -> Text
 pPrintPat = \case
   PName x -> x
   PNatLit x -> T.pack $ show x
   PConstr c ps -> "(" <> c <> " " <> T.intercalate " " (pPrintPat <$> ps) <> ")"
+
+-- Expression pretty-printing {{{
+
+class PrettyExpr p where
+  pPrintId :: Proxy p -> Id p -> Text
+
+pPrintExpr :: forall p. (PrettyExpr p) => Expr p -> Text
+pPrintExpr = \case
+  EName x ->
+    let x' = pPrintId (Proxy :: Proxy p) x
+    in if isSymbolic x' then "(" <> x' <> ")" else x'
+  ENatLit x -> T.pack $ show x
+  EAppl (L _ e0) (L _ e1) -> "(" <> go e0 <> " " <> go e1 <> ")"
+  ELambda x (L _ e) -> "(λ " <> x <> " -> " <> go e <> ")"
+  ELet bs (L _ e) -> "let {" <> inter pPrintBinding bs <> "} in " <> go e
+  ECase (L _ e) as -> "case " <> go e <> " of {" <> inter pPrintAlt as <> "}"
+  where isSymbolic = not . isAlpha . T.head
+        inter f xs = T.intercalate "; " (f <$> xs)
+        go = pPrintExpr
+
+instance PrettyExpr 'Parsed where
+  pPrintId _ x = x
+
+instance PrettyExpr 'Renamed where
+  pPrintId _ = \case
+    QualName (Module ms) x -> T.intercalate "." ms <> "." <> x
+    LoclName x -> x
+    GenName x -> "%" <> x
+
+
+pPrintAlt :: (PrettyExpr p) => LAlt p -> Text
+pPrintAlt (L _ (Alt pat (L _ e))) = pPrintPat pat <> " -> " <> pPrintExpr e
+
+pPrintBinding :: (PrettyExpr p) => Binding p -> Text
+pPrintBinding = \case
+  BindingImpl x (L _ e) -> x <> " = " <> pPrintExpr e
+  BindingExpl x (L _ e) (L _ t) -> x <> " :: " <> pPrintScheme t <> "; " <> x <> " = " <> pPrintExpr e
+
+-- }}}

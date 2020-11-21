@@ -89,4 +89,4 @@ renameLAlt :: LAlt 'Parsed -> Rename (LAlt 'Renamed)
 renameLAlt = traverse renameAlt
 
 findQualified :: Text -> Rename (Maybe Module)
-findQualified x = pure $ Just $ Module ["Foo", x] -- XXX TODO
+findQualified x = pure $ Just $ Module ["Foo", "Bar"] -- XXX TODO
