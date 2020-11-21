@@ -26,7 +26,7 @@ located m = do
   start <- getSourcePos
   x <- m
   end <- getSourcePos
-  pure $ L (SrcSpan start end) x
+  pure $ L (Just $ SrcSpan start end) x
 
 -- Utility parsers {{{
 

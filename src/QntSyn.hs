@@ -15,6 +15,7 @@ import qualified Data.Text as T
 import Numeric.Natural
 import Data.Set (Set)
 import Data.Proxy
+import Text.Megaparsec.Pos (SourcePos)
 
 type family Id p where
   Id 'Parsed = Text
@@ -27,12 +28,6 @@ type family Binder p where
   Binder 'Typechecked = TcBinder
 
 data TcBinder = TcBinder Text Type
-
-data Located a = L SrcSpan a
-  deriving (Functor, Foldable, Traversable)
-
-unLoc :: Located a -> a
-unLoc (L _ x) = x
 
 type LQntExpr p = Located (QntExpr p)
 type LQntAlt p = Located (QntAlt p)
@@ -136,3 +131,19 @@ instance IsPass 'Typechecked where
   psBinderType _ (TcBinder _ t) = Just t
 
 -- }}}
+
+data SrcSpan = SrcSpan SourcePos SourcePos
+  deriving (Show, Eq)
+
+instance Semigroup SrcSpan where
+  SrcSpan s0 e0 <> SrcSpan s1 e1 = SrcSpan (min s0 s1) (max e0 e1)
+
+data Located a = L (Maybe SrcSpan) a
+  deriving (Functor, Foldable, Traversable)
+
+unLoc :: Located a -> a
+unLoc (L _ x) = x
+
+instance Applicative Located where
+  pure = L mempty
+  L s0 f <*> L s1 x = L (s0 <> s1) (f x)
