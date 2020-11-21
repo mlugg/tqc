@@ -4,6 +4,7 @@ module NclSyn where
 
 import Data.Text (Text)
 import Numeric.Natural
+import Tqc
 
 {-
  - There are three main differences between QntSyn and NclSyn.
@@ -27,31 +28,24 @@ import Numeric.Natural
  -}
 
 data Expr
-  = EName Text
+  = EName RName
   | ENatLit Natural
   | EAppl Expr Expr
   | ELambda Text [Text] Expr  -- ELambda arg frees body
   | ELet [Binding] Expr
   | ECase Expr Text [Alt] Expr -- ECase scrutinee name alts def
-  deriving (Show)
 
 data Binding = Binding Text Expr
-  deriving (Show)
 
 data Pattern
-  = PConstr Text [Text]
+  = PConstr Qual [Text]
   | PNatLit Natural
-  deriving (Show)
 
 data Alt = Alt Pattern Expr
-  deriving (Show)
 
 -- Like Expr, DataDecl is untyped
 data DataDecl = DataDecl Text [DataConstr]
-  deriving (Show)
 
 data DataConstr = DataConstr Text Natural  -- DataConstr name nargs
-  deriving (Show)
 
 data NclProg = NclProg [DataDecl] [Binding]
-  deriving (Show)

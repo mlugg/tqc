@@ -69,14 +69,19 @@ withEnv f m = Compile $ runCompile m . f
 
 -- }}}
 
-lookupVar :: Text -> Compile ()
-lookupVar x = do
-  e <- ask
-  if
-    | x == envArg e -> tellSrc $ pure PPushArg
-    | Just i <- M.lookup x (envStack e) -> tellSrc $ pure $ PPushStack (BottomOff i)
-    | Just i <- M.lookup x (envFrees e) -> tellSrc $ pure $ PPushClos i
-    | otherwise -> tellSrc $ pure $ PPushGlobl $ "obj_" <> x
+lookupVar :: RName -> Compile ()
+lookupVar = \case
+  QualName (Qual (Module m) x) -> tellSrc $ pure $ PPushGlobl ("obj_" <> T.intercalate "." m <> "." <> "x")
+  LoclName x -> lookupLocal x
+  GenName x  -> lookupLocal x
+
+lookupLocal :: Text -> Compile ()
+lookupLocal x = do
+    e <- ask
+    if | x == envArg e -> tellSrc $ pure PPushArg
+       | Just i <- M.lookup x (envStack e) -> tellSrc $ pure $ PPushStack (BottomOff i)
+       | Just i <- M.lookup x (envFrees e) -> tellSrc $ pure $ PPushClos i
+       | otherwise -> throwErr _
 
 withStack :: Map Text Word64 -> Compile a -> Compile a
 withStack new = withEnv $ \e -> e { envStack = new <> envStack e, envStackOff = fromIntegral (M.size new) + envStackOff e }
@@ -122,7 +127,7 @@ compile = \case
     tellSrc $ pure $ PAllocate (AllocFun nfrees fnName)
 
     for_ frees' $ \(name, idx) -> do
-      lookupVar name
+      lookupLocal name
       tellSrc $ PObjSetPtr (TopOff 1) (idx + 1) (TopOff 0)
              <| PPop 1
              <| mempty
@@ -180,7 +185,7 @@ compileCase :: Alt -> Compile SwitchAlt
 compileCase (Alt pat expr) = do
   (constrId, binds) <- case pat of
     PConstr name binds ->
-      lookupConstrId name <&> \i ->
+      lookupConstr name <&> \i ->
       (i, binds)
     PNatLit x ->
       if x > fromIntegral (maxBound :: Word64)
@@ -199,5 +204,5 @@ compileCase (Alt pat expr) = do
 
   pure $ SwitchAlt constrId src
 
-lookupConstrId :: Text -> Compile Word64
-lookupConstrId = _
+lookupConstr :: Qual -> Compile Word64
+lookupConstr = _
