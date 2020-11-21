@@ -184,7 +184,7 @@ typeScheme = located $ polyType <|> (Scheme S.empty <$> type_)
 
 expr :: Parser (LQntExpr 'Parsed)
 expr = makeExprParser exprTerm
-  [ [ InfixL $ pure $ \ f@(L fSpan _) x@(L xSpan _) -> L (fSpan <> xSpan) (QntApp f x) ]
+  [ [ InfixL $ pure $ \ f@(L fs _) x@(L xs _) -> L (fs <> xs) (QntApp f x) ]
   ]
 
 exprTerm :: Parser (LQntExpr 'Parsed)
