@@ -4,7 +4,6 @@ module NclToPhtn where
 
 import Data.Functor
 import PhtnSyn
-import Data.Text (Text)
 import qualified Data.Text as T
 import Numeric.Natural
 import Data.Map (Map)
