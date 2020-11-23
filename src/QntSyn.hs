@@ -17,16 +17,24 @@ import Data.Set (Set)
 import Data.Proxy
 import Text.Megaparsec.Pos (SourcePos)
 
+-- An identifer for the given pass; used in QntVar. The renamer resolvesd
+-- var references into an RName. However, note that we never actually
+-- use GenName until conversion to Nucleus.
 type family Id p where
   Id 'Parsed = Text
   Id 'Renamed = RName
   Id 'Typechecked = RName
 
+-- A constructor reference for the given pass; used in QntConstrPat. The
+-- renamer resolves the constructors and qualifies them with the module
+-- they originate from.
 type family Constr p where
   Constr 'Parsed = Text
   Constr 'Renamed = Qual
   Constr 'Typechecked = Qual
 
+-- The type of binders. The typechecker annotates these with the type
+-- being bound, primarily for debugging purposes.
 type family Binder p where
   Binder 'Parsed = Text
   Binder 'Renamed = Text
@@ -34,6 +42,7 @@ type family Binder p where
 
 data TcBinder = TcBinder Text Type
 
+-- Aliases for located forms of various syntactic constructs
 type LQntExpr p = Located (QntExpr p)
 type LQntAlt p = Located (QntAlt p)
 type LScheme = Located Scheme
