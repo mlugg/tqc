@@ -94,18 +94,18 @@ withStack' ns m = do
 withStackOff :: Word64 -> Compile a -> Compile a
 withStackOff extra = withEnv $ \e -> e { envStackOff = extra + envStackOff e }
 
-compile :: Expr -> Compile ()
+compile :: NclExpr -> Compile ()
 compile = \case
-  EName x -> lookupVar x
+  NclVar x -> lookupVar x
 
-  ENatLit x -> do
+  NclNatLit x -> do
     when (x > fromIntegral (maxBound :: Word64)) $ throwErr NumRangeErr
 
     tellSrc $ PAllocate (AllocData 0)
            <| PObjSetLit (TopOff 0) 0 (fromIntegral x)
            <| mempty
 
-  EAppl e0 e1 -> do
+  NclApp e0 e1 -> do
     tellSrc $ pure $ PAllocate AllocThunk
     withStackOff 1 $ compile e0
     withStackOff 2 $ compile e1
@@ -114,7 +114,7 @@ compile = \case
            <| PPop 2
            <| mempty
 
-  ELambda arg frees body -> do
+  NclLam arg frees body -> do
     fnName <- mappend "fn_" . T.pack . show <$> freshId
 
     let frees' = zip frees [0..]
@@ -132,19 +132,19 @@ compile = \case
              <| PPop 1
              <| mempty
 
-  ELet bs body -> do
+  NclLet bs body -> do
     -- Allocate an indirection for each binding
     tellSrc $ fromList $ PAllocate AllocInd <$ bs
 
     sOff <- asks envStackOff
 
-    let bindName (Binding n _) = n
+    let bindName (NclBind n _) = n
         names = bindName <$> bs
         stackNew = M.fromList $ zip names [sOff..]
         nbinds = fromIntegral $ M.size stackNew
 
     withStack stackNew $ do
-      for_ bs $ \(Binding name expr) -> do
+      for_ bs $ \(NclBind name expr) -> do
         -- Compile the definition
         compile expr
 
@@ -166,7 +166,7 @@ compile = \case
            <| PPop nbinds -- Pop the original return value plus (n-1) binds (the last one remains, it's been replaced with the ret val)
            <| mempty
 
-  ECase scrut name alts def -> do
+  NclCase scrut name alts def -> do
     -- Evaluate the scrutinee
     compile scrut
 
@@ -181,13 +181,13 @@ compile = \case
       -- Switch on its constructor
       tellSrc $ pure $ PObjSwitchLit 0 altsSrcs defSrc
 
-compileCase :: Alt -> Compile SwitchAlt
-compileCase (Alt pat expr) = do
+compileCase :: NclAlt -> Compile SwitchAlt
+compileCase (NclAlt pat expr) = do
   (constrId, binds) <- case pat of
-    PConstr name binds ->
+    NclConstrPat name binds ->
       lookupConstr name <&> \i ->
       (i, binds)
-    PNatLit x ->
+    NclNatLitPat x ->
       if x > fromIntegral (maxBound :: Word64)
       then throwErr NumRangeErr
       else pure (fromIntegral x, [])

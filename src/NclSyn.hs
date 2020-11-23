@@ -27,25 +27,25 @@ import Tqc
  -    information must be found before code generation.
  -}
 
-data Expr
-  = EName RName
-  | ENatLit Natural
-  | EAppl Expr Expr
-  | ELambda Text [Text] Expr  -- ELambda arg frees body
-  | ELet [Binding] Expr
-  | ECase Expr Text [Alt] Expr -- ECase scrutinee name alts def
+data NclExpr
+  = NclVar RName
+  | NclNatLit Natural
+  | NclApp NclExpr NclExpr
+  | NclLam Text [Text] NclExpr  -- ELambda arg frees body
+  | NclLet [NclBind] NclExpr
+  | NclCase NclExpr Text [NclAlt] NclExpr -- ECase scrutinee name alts def
 
-data Binding = Binding Text Expr
+data NclBind = NclBind Text NclExpr
 
-data Pattern
-  = PConstr Qual [Text]
-  | PNatLit Natural
+data NclPat
+  = NclConstrPat Qual [Text]
+  | NclNatLitPat Natural
 
-data Alt = Alt Pattern Expr
+data NclAlt = NclAlt NclPat NclExpr
 
--- Like Expr, DataDecl is untyped
+-- Like NclExpr, DataDecl is untyped
 data DataDecl = DataDecl Text [DataConstr]
 
 data DataConstr = DataConstr Text Natural  -- DataConstr name nargs
 
-data NclProg = NclProg [DataDecl] [Binding]
+data NclProg = NclProg [DataDecl] [NclBind]
