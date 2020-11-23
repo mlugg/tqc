@@ -157,12 +157,8 @@ data SrcSpan = SrcSpan SourcePos SourcePos
 instance Semigroup SrcSpan where
   SrcSpan s0 e0 <> SrcSpan s1 e1 = SrcSpan (min s0 s1) (max e0 e1)
 
-data Located a = L (Maybe SrcSpan) a
+data Located a = L SrcSpan a
   deriving (Functor, Foldable, Traversable)
 
 unLoc :: Located a -> a
 unLoc (L _ x) = x
-
-instance Applicative Located where
-  pure = L mempty
-  L s0 f <*> L s1 x = L (s0 <> s1) (f x)
