@@ -22,6 +22,11 @@ type family Id p where
   Id 'Renamed = RName
   Id 'Typechecked = RName
 
+type family Constr p where
+  Constr 'Parsed = Text
+  Constr 'Renamed = Qual
+  Constr 'Typechecked = Qual
+
 type family Binder p where
   Binder 'Parsed = Text
   Binder 'Renamed = Text
@@ -47,12 +52,12 @@ data QntBind p
   = QntImpl (Binder p) (LQntExpr p)
   | QntExpl (Binder p) (LQntExpr p) LScheme
 
-data QntPat
-  = QntNamePat Text
+data QntPat p
+  = QntNamePat (Binder p)
   | QntNatLitPat Natural
-  | QntConstrPat Text [QntPat]
+  | QntConstrPat (Constr p) [QntPat p]
 
-data QntAlt p = QntAlt QntPat (LQntExpr p)
+data QntAlt p = QntAlt (QntPat p) (LQntExpr p)
 
 bindingName :: forall p. (IsPass p) => QntBind p -> Text
 bindingName = \case
@@ -110,11 +115,13 @@ class IsPass p where
   psPrintId    :: Proxy p -> Id p     -> Text
   psBinderName :: Proxy p -> Binder p -> Text
   psBinderType :: Proxy p -> Binder p -> Maybe Type
+  psConstrName :: Proxy p -> Constr p -> Text
 
 instance IsPass 'Parsed where
   psPrintId    _ x = x
   psBinderName _ x = x
   psBinderType _ _ = Nothing
+  psConstrName _ x = x
 
 instance IsPass 'Renamed where
   psPrintId _ = \case
@@ -125,10 +132,13 @@ instance IsPass 'Renamed where
   psBinderName _ x = x
   psBinderType _ _ = Nothing
 
+  psConstrName _ (Qual (Module ms) x) = T.intercalate "." ms <> "." <> x
+
 instance IsPass 'Typechecked where
   psPrintId _ = psPrintId (Proxy :: Proxy 'Renamed)
   psBinderName _ (TcBinder x _) = x
   psBinderType _ (TcBinder _ t) = Just t
+  psConstrName _ = psConstrName (Proxy :: Proxy 'Renamed)
 
 -- }}}
 

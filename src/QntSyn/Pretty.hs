@@ -32,11 +32,13 @@ pPrintType = \case
 
   where isSymbolic = not . isAlpha . T.head
 
-pPrintPat :: QntPat -> Text
+pPrintPat :: forall p. (IsPass p) => QntPat p -> Text
 pPrintPat = \case
-  QntNamePat x -> x
+  QntNamePat x -> pPrintBinder pr x
   QntNatLitPat x -> T.pack $ show x
-  QntConstrPat c ps -> "(" <> c <> " " <> T.intercalate " " (pPrintPat <$> ps) <> ")"
+  QntConstrPat c ps -> "(" <> psConstrName pr c <> " " <> T.intercalate " " (pPrintPat <$> ps) <> ")"
+  where pr :: Proxy p
+        pr = Proxy
 
 pPrintExpr :: forall p. (IsPass p) => QntExpr p -> Text
 pPrintExpr = \case

@@ -206,7 +206,7 @@ case_ = located $ QntCase <$> (reserved "case" *> expr) <*> (reserved "of" *> br
 
 -- Patterns {{{
 
-pattern :: Parser QntPat
+pattern :: Parser (QntPat 'Parsed)
 pattern = parens pattern
   <|> QntNamePat <$> identLower
   <|> QntNatLitPat <$> decimal
