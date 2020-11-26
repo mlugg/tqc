@@ -39,7 +39,7 @@ renameExpr = \case
   QntVar n -> do
     isLocal <- lookupLocal n
     if isLocal
-    then pure $ QntVar (LoclName n)
+    then pure $ QntVar (LoclName $ SrcName n)
     else findQualified n >>= \case
       Nothing -> throwErr _ -- TODO XXX
       Just m  -> pure $ QntVar (QualName (Qual m n))

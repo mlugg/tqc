@@ -135,8 +135,8 @@ instance IsPass 'Parsed where
 instance IsPass 'Renamed where
   psPrintId _ = \case
     QualName (Qual (Module ms) x) -> T.intercalate "." ms <> "." <> x
-    LoclName x -> x
-    GenName x -> "%" <> x
+    LoclName (SrcName x) -> x
+    LoclName (GenName x) -> "%" <> x
 
   psBinderName _ x = x
   psBinderType _ _ = Nothing

@@ -60,5 +60,8 @@ data Qual = Qual Module Text
 
 data RName
   = QualName Qual
-  | LoclName Text
+  | LoclName LName
+
+data LName
+  = SrcName Text
   | GenName Text
