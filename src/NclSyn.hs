@@ -27,7 +27,7 @@ import Tqc
  -    information must be found before code generation.
  -}
 
-data Binder
+data NclBinder
   = SrcBinder Text
   | GenBinder Text
   deriving (Ord, Eq)
@@ -36,14 +36,17 @@ data NclExpr
   = NclVar RName
   | NclNatLit Natural
   | NclApp NclExpr NclExpr
-  | NclLam Binder [Binder] NclExpr  -- ELambda arg frees body
+  | NclLam NclBinder [NclBinder] NclExpr  -- ELambda arg frees body
   | NclLet [NclBind] NclExpr
-  | NclCase NclExpr Binder [NclAlt] NclExpr -- ECase scrutinee name alts def
+  | NclCase NclExpr NclBinder [NclAlt] NclExpr -- ECase scrutinee name alts def
 
-data NclBind = NclBind Binder NclExpr
+data NclBind = NclBind NclBinder NclExpr
+
+nclBinder :: NclBind -> NclBinder
+nclBinder (NclBind b _) = b
 
 data NclPat
-  = NclConstrPat Qual [Binder]
+  = NclConstrPat Qual [NclBinder]
   | NclNatLitPat Natural
 
 data NclAlt = NclAlt NclPat NclExpr

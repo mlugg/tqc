@@ -17,9 +17,9 @@ import Control.Monad
 import Data.List (genericLength)
 
 data CompileEnv = CompileEnv
-  { envArg   :: Binder
-  , envFrees :: Map Binder Word64
-  , envStack :: Map Binder Word64
+  { envArg   :: NclBinder
+  , envFrees :: Map NclBinder Word64
+  , envStack :: Map NclBinder Word64
   , envStackOff :: Word64
   }
 
@@ -74,7 +74,7 @@ lookupVar = \case
   LoclName x -> lookupLocal (SrcBinder x)
   GenName x  -> lookupLocal (GenBinder x)
 
-lookupLocal :: Binder -> Compile ()
+lookupLocal :: NclBinder -> Compile ()
 lookupLocal x = do
     e <- ask
     if | x == envArg e -> tellSrc $ pure PPushArg
@@ -82,10 +82,10 @@ lookupLocal x = do
        | Just i <- M.lookup x (envFrees e) -> tellSrc $ pure $ PPushClos i
        | otherwise -> throwErr _
 
-withStack :: Map Binder Word64 -> Compile a -> Compile a
+withStack :: Map NclBinder Word64 -> Compile a -> Compile a
 withStack new = withEnv $ \e -> e { envStack = new <> envStack e, envStackOff = fromIntegral (M.size new) + envStackOff e }
 
-withStack' :: [Binder] -> Compile a -> Compile a
+withStack' :: [NclBinder] -> Compile a -> Compile a
 withStack' ns m = do
   off <- asks envStackOff
   withStack (M.fromList $ zip ns [off..]) m
