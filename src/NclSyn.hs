@@ -31,8 +31,7 @@ import Tqc
  -}
 
 data NclBinder
-  = SrcBinder Text
-  | GenBinder Text
+  = NclBinder LName
   deriving (Ord, Eq)
 
 data NclExpr

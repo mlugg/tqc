@@ -65,3 +65,4 @@ data RName
 data LName
   = SrcName Text
   | GenName Text
+  deriving (Ord, Eq)
