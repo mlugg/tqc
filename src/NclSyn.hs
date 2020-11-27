@@ -22,6 +22,9 @@ import Tqc
  -    also has a default case; during IR creation, if this is not
  -    present, one that throws an error is generated.
  -
+ - 2a) Case expression scrutinees can only be variables (i.e. 'RName's)
+ -     for simplicity
+ -
  - 3) Lambda abstractions have extra information associated with them: a
  -    list of free variables referenced within the lambda. This
  -    information must be found before code generation.
@@ -38,7 +41,7 @@ data NclExpr
   | NclApp NclExpr NclExpr
   | NclLam NclBinder [NclBinder] NclExpr  -- ELambda arg frees body
   | NclLet [NclBind] NclExpr
-  | NclCase NclExpr NclBinder [NclAlt] NclExpr -- ECase scrutinee name alts def
+  | NclCase RName NclBinder [NclAlt] NclExpr -- ECase scrutinee name alts def
 
 data NclBind = NclBind NclBinder NclExpr
 

@@ -167,7 +167,7 @@ compile = \case
 
   NclCase scrut name alts def -> do
     -- Evaluate the scrutinee
-    compile scrut
+    compile (NclVar scrut)
 
     -- Force eval
     tellSrc $ pure PEval
