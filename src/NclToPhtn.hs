@@ -164,14 +164,14 @@ compile = \case
            <| PPop nbinds -- Pop the original return value plus (n-1) binds (the last one remains, it's been replaced with the ret val)
            <| mempty
 
-  NclCase scrut name alts def -> do
+  NclCase scrut alts def -> do
     -- Evaluate the scrutinee
     compile (NclVar scrut)
 
     -- Force eval
     tellSrc $ pure PEval
 
-    withStack' [name] $ do
+    withStackOff 1 $ do
       -- Create a list of switch alternatives
       altsSrcs <- traverse compileCase alts
       -- Compile the default case

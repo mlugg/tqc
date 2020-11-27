@@ -40,7 +40,7 @@ data NclExpr
   | NclApp NclExpr NclExpr
   | NclLam NclBinder [NclBinder] NclExpr  -- ELambda arg frees body
   | NclLet [NclBind] NclExpr
-  | NclCase RName NclBinder [NclAlt] NclExpr -- ECase scrutinee name alts def
+  | NclCase RName [NclAlt] NclExpr -- ECase scrutinee alts def
 
 data NclBind = NclBind NclBinder NclExpr
 
