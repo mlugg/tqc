@@ -54,13 +54,15 @@ data TqcPass
   deriving (Show, Eq)
 
 newtype Module = Module [Text]
-  deriving (Show, Eq)
+  deriving (Show, Ord, Eq)
 
 data Qual = Qual Module Text
+  deriving (Ord, Eq)
 
 data RName
   = QualName Qual
   | LoclName LName
+  deriving (Ord, Eq)
 
 data LName
   = SrcName Text
