@@ -97,7 +97,7 @@ semiTerm x = x <* semi
 -- Top-level parsers {{{
 
 -- Data declarations have the form `data Type a b = Foo a (List b)`
-dataDecl :: Parser (DataDecl 'Parsed)
+dataDecl :: Parser DataDecl
 dataDecl = DataDecl
   <$> (reserved "data" *> identUpperOp)
   <*> many typeParam
@@ -113,7 +113,7 @@ typeParam = flip TyParam KStar <$> identLower
 
 -- A data constructor is just the constructor name followed by the types
 -- of its parameters
-dataConstr :: Parser (DataConstr 'Parsed)
+dataConstr :: Parser DataConstr
 dataConstr = DataConstr <$> identUpperOp <*> many type_
 
 -- }}}

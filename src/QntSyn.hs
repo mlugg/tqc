@@ -79,11 +79,11 @@ bindingName = \case
 
 -- Datatype declarations {{{
 
-data DataDecl p = DataDecl Text [TyParam] [DataConstr p]
+data DataDecl = DataDecl Text [TyParam] [DataConstr]
 
 data TyParam = TyParam Text Kind
 
-data DataConstr p = DataConstr Text [Type]
+data DataConstr = DataConstr Text [Type]
 
 -- }}}
 
@@ -92,8 +92,11 @@ data DataConstr p = DataConstr Text [Type]
 data Type
   = TName Text
   | TVar Text
-  | TUnif Integer
+  | TUnif TyUnif
   | TApp Type Type
+
+newtype TyUnif = TyUnif Integer
+  deriving (Ord, Eq)
 
 tArrow :: Type -> Type -> Type
 tArrow t0 t1 = (TApp (TName "->") t0) `TApp` t1
@@ -111,7 +114,7 @@ data Kind
 -- }}}
 
 data QntProg p
-  = QntProg [DataDecl p] [QntBind p]
+  = QntProg [DataDecl] [QntBind p]
 
 -- IsPass {{{
 

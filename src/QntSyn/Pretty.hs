@@ -26,7 +26,7 @@ pPrintType = \case
 
   TVar x -> x
 
-  TUnif x -> "α" <> T.pack (show x)
+  TUnif (TyUnif x) -> "α" <> T.pack (show x)
 
   TApp x y -> "(" <> pPrintType x <> " " <> pPrintType y <> ")"
 
