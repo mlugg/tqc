@@ -23,9 +23,9 @@ lookupConstr :: Qual -> Infer (Type, DataConstr)
 lookupConstr = _
 
 containsUnif :: Type -> TyUnif -> Bool
-TUnif x `containsUnif` y = x == y
+TUnif x    `containsUnif` u = x == u
 TApp t0 t1 `containsUnif` u = t0 `containsUnif` u || t1 `containsUnif` u
-_ `containsUnif` _ = False
+_          `containsUnif` _ = False
 
 singletonTypeEnv :: Text -> Type -> TypeEnv
 singletonTypeEnv n t = TypeEnv $ M.singleton (LoclName $ SrcName n) t
