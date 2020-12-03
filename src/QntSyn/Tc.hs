@@ -4,7 +4,10 @@ module QntSyn.Tc where
 
 import Data.Map (Map)
 import qualified Data.Map as M
+import Data.Set (Set)
+import qualified Data.Set as S
 import Data.Text (Text)
+import qualified Data.Text as T
 import Data.Foldable
 import Tqc
 import QntSyn
@@ -14,7 +17,7 @@ import Data.Traversable
 import Control.Applicative
 import Control.Monad
 
-newtype TypeEnv = TypeEnv (Map RName Type)
+newtype TypeEnv = TypeEnv (Map RName Scheme)
 
 fresh :: Infer TyVar
 fresh = Infer $ \ e s u -> pure (TvUnif u, s, (u+1))
@@ -27,7 +30,7 @@ TVar v     `containsVar` u = v == u
 TApp t0 t1 `containsVar` u = t0 `containsVar` u || t1 `containsVar` u
 _          `containsVar` _ = False
 
-singletonTypeEnv :: Text -> Type -> TypeEnv
+singletonTypeEnv :: Text -> Scheme -> TypeEnv
 singletonTypeEnv n t = TypeEnv $ M.singleton (LoclName $ SrcName n) t
 
 instance Semigroup TypeEnv where
@@ -36,16 +39,30 @@ instance Semigroup TypeEnv where
 instance Monoid TypeEnv where
   mempty = TypeEnv mempty
 
-lookupType :: RName -> Infer (Maybe Type)
+lookupType :: RName -> Infer (Maybe Scheme)
 lookupType n = Infer $ \ (TypeEnv e) s u ->
   let x = M.lookup n e in pure (x,s,u)
+
+typeVars :: Type -> Set TyVar
+typeVars = \case
+  TName _    -> S.empty
+  TVar v     -> S.singleton v
+  TApp t0 t1 -> typeVars t0 <> typeVars t1
+
+freeTvs :: Scheme -> Set TyVar
+freeTvs (Scheme vs t) = typeVars t S.\\ (S.map TvName vs)
+
+getEnvFreeTvs :: Infer (Set TyVar)
+getEnvFreeTvs = Infer $ \ (TypeEnv e) s u ->
+  let vs = foldMap freeTvs e
+  in pure (vs,s,u)
 
 withEnv :: TypeEnv -> Infer a -> Infer a
 withEnv (TypeEnv new) m = Infer $ \ (TypeEnv e) s u ->
   let e' = new <> e
   in runInfer m (TypeEnv e') s u
 
-withType :: RName -> Type -> Infer a -> Infer a
+withType :: RName -> Scheme -> Infer a -> Infer a
 withType n t m = Infer $ \ (TypeEnv e) s u ->
   let e' = M.insert n t e
   in runInfer m (TypeEnv e') s u
@@ -127,6 +144,51 @@ instance TqcMonad Infer where
 
 -- }}}
 
+replaceTyvars :: Map TyVar Type -> Type -> Type
+replaceTyvars m = go where
+  go = \case
+    TName x    -> TName x
+    TVar v     -> M.findWithDefault (TVar v) v m
+    TApp t0 t1 -> TApp (go t0) (go t1)
+
+generalize :: Set TyVar -> Type -> Scheme
+generalize excl ty =
+      -- Get all the tyvars mentioned in the type
+  let allVars = typeVars ty
+
+      -- Limit them to the ones we need to quantify over
+      quantVars = allVars S.\\ excl
+
+      -- Find the ones where we need to rename the var (each one with a
+      -- numeric tyvar)
+      renameVars = S.filter (\case { TvName _ -> False; TvUnif _ -> True }) quantVars
+
+      -- Get the list of generated tyvar names we can use
+      genNames = filter (\x -> TvName x `S.notMember` allVars) allGenNames
+      
+      -- Create a mapping from tyvars to tyvar names they should be replaced
+      -- with
+      tvMapping = M.fromList $ zip (S.toList renameVars) genNames
+
+      -- Map TVar . TvName over the above to make a map from tyvars to
+      -- the actual types they should be replaced with
+      tvMapping' = TVar . TvName <$> tvMapping
+
+      -- We quantify over both quantVars and the names we're replacing
+      -- tyvars with
+      allQuantVars = S.map (\(TvName x) -> x) quantVars <> S.fromList (M.elems tvMapping)
+
+  in Scheme allQuantVars (replaceTyvars tvMapping' ty)
+
+  where allGenNames = fmap T.singleton ['a'..'z']
+                   ++ fmap (T.cons 'a' . T.pack . show) [0..]
+
+instantiate :: Scheme -> Infer Type
+instantiate (Scheme vs ty) = do
+  tvs <- replicateM (S.size vs) fresh
+  let m = M.fromList $ zip (TvName <$> S.toList vs) (TVar <$> tvs)
+  pure $ replaceTyvars m ty
+
 getSub :: Infer Substitution
 getSub = Infer $ \ e s u -> pure (s, s, u)
 
@@ -167,7 +229,7 @@ infer = \case
   QntVar n ->
     lookupType n >>= \case
       Nothing -> throwErr _
-      Just t  -> pure (t, QntVar n)
+      Just s  -> instantiate s <&> \t -> (t, QntVar n)
 
   QntNatLit x ->
     pure (TName "Nat", QntNatLit x)
@@ -186,7 +248,7 @@ infer = \case
   QntLam b e -> do
     ua <- fresh
     let ta = TVar ua
-    (te, e') <- withType (LoclName $ SrcName b) ta $ infer' e
+    (te, e') <- withType (LoclName $ SrcName b) (Scheme S.empty ta) $ infer' e
 
     pure (ta `tArrow` te, QntLam (TcBinder b ta) e')
 
@@ -216,7 +278,7 @@ inferPat = \case
   QntNamePat n -> do
     un <- fresh
     let tn = TVar un
-    pure (singletonTypeEnv n tn, tn, QntNamePat (TcBinder n tn))
+    pure (singletonTypeEnv n (Scheme S.empty tn), tn, QntNamePat (TcBinder n tn))
 
   QntNatLitPat x ->
     pure (mempty, TName "Nat", QntNatLitPat x)
@@ -232,3 +294,34 @@ inferPat = \case
         pure (e,p')
 
     pure (fold es, tConstr, QntConstrPat c ps')
+
+inferBinds :: [QntBind 'Renamed] -> Infer (TypeEnv, [QntBind 'Typechecked])
+inferBinds bs = _
+
+inferBindGroup :: [(Binder 'Renamed, LQntExpr 'Renamed)] -> Infer (TypeEnv, [(Binder 'Typechecked, LQntExpr 'Typechecked)])
+inferBindGroup bs = do
+  freeTvs <- getEnvFreeTvs
+
+  let names  = fst <$> bs
+      rnames = LoclName . SrcName <$> names
+
+  tvs <- sequenceA $ fresh <$ bs
+
+  let env = TypeEnv $ M.fromList $ zip rnames (Scheme S.empty . TVar <$> tvs)
+
+  exprs <- withEnv env $
+           for (zip bs tvs) $ \((name, L loc e), tv) -> do
+             (t, e') <- infer e
+             unify t (TVar tv)
+             pure $ L loc e'
+
+  s <- getSub
+
+  let types = applySub s . TVar <$> tvs
+      schemes = generalize freeTvs <$> types
+    
+      finalEnv = TypeEnv $ M.fromList $ zip rnames schemes
+
+      binders = zipWith TcBinder names types
+
+  pure (finalEnv, zip binders exprs)
