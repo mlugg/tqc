@@ -2,12 +2,14 @@
 
 module QntSyn.Tc where
 
+import Data.Either
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Graph as G
 import Data.Foldable
 import Tqc
 import QntSyn
@@ -17,7 +19,20 @@ import Data.Traversable
 import Control.Applicative
 import Control.Monad
 
-newtype TypeEnv = TypeEnv (Map RName Scheme)
+mapAccumLM :: (Monad m)
+           => (a -> b -> m (a, c))
+           -> a
+           -> [b]
+           -> m (a, [c])
+
+mapAccumLM f = go where
+  go z [] = pure (z, [])
+  go z (x:xs) = do
+    (z0, y) <- f z x
+    (z1, ys) <- go z0 xs
+    pure (z1, y:ys)
+
+type TypeEnv = Map RName Scheme
 
 fresh :: Infer TyVar
 fresh = Infer $ \ e s u -> pure (TvUnif u, s, (u+1))
@@ -31,16 +46,10 @@ TApp t0 t1 `containsVar` u = t0 `containsVar` u || t1 `containsVar` u
 _          `containsVar` _ = False
 
 singletonTypeEnv :: Text -> Scheme -> TypeEnv
-singletonTypeEnv n t = TypeEnv $ M.singleton (LoclName $ SrcName n) t
-
-instance Semigroup TypeEnv where
-  TypeEnv m0 <> TypeEnv m1 = TypeEnv $ m0 <> m1
-
-instance Monoid TypeEnv where
-  mempty = TypeEnv mempty
+singletonTypeEnv n t = M.singleton (LoclName $ SrcName n) t
 
 lookupType :: RName -> Infer (Maybe Scheme)
-lookupType n = Infer $ \ (TypeEnv e) s u ->
+lookupType n = Infer $ \ e s u ->
   let x = M.lookup n e in pure (x,s,u)
 
 typeVars :: Type -> Set TyVar
@@ -53,19 +62,19 @@ freeTvs :: Scheme -> Set TyVar
 freeTvs (Scheme vs t) = typeVars t S.\\ (S.map TvName vs)
 
 getEnvFreeTvs :: Infer (Set TyVar)
-getEnvFreeTvs = Infer $ \ (TypeEnv e) s u ->
+getEnvFreeTvs = Infer $ \ e s u ->
   let vs = foldMap freeTvs e
   in pure (vs,s,u)
 
 withEnv :: TypeEnv -> Infer a -> Infer a
-withEnv (TypeEnv new) m = Infer $ \ (TypeEnv e) s u ->
+withEnv new m = Infer $ \ e s u ->
   let e' = new <> e
-  in runInfer m (TypeEnv e') s u
+  in runInfer m e' s u
 
 withType :: RName -> Scheme -> Infer a -> Infer a
-withType n t m = Infer $ \ (TypeEnv e) s u ->
+withType n t m = Infer $ \ e s u ->
   let e' = M.insert n t e
-  in runInfer m (TypeEnv e') s u
+  in runInfer m e' s u
 
 -- Substitutions {{{
 
@@ -298,7 +307,51 @@ inferPat = \case
     pure (fold es, tConstr, QntConstrPat c ps')
 
 inferBinds :: [QntBind 'Renamed] -> Infer (TypeEnv, [QntBind 'Typechecked])
-inferBinds bs = _
+inferBinds bs = do
+  let (implBinds, explBinds) = partitionEithers $ bs <&> \case
+        QntImpl b e   -> Left   (b,e)
+        QntExpl b e s -> Right ((b,e),s)
+
+      implGroups = mkBindGroups implBinds
+      
+      explEnvGiven = M.fromList $ explBinds <&> \((n, _), L _ s) -> (LoclName $ SrcName n, s)
+
+  (fullEnv, implGroups') <- mapAccumLM f explEnvGiven implGroups
+
+  let implBinds' = mconcat implGroups'
+
+  -- Everything's inferred, but we need to check the types of the
+  -- explicit bindings make sense!
+  -- TODO: that
+
+  _
+
+  where f curEnv g = do
+          (newEnv, g') <- withEnv curEnv $ inferBindGroup g
+          pure (newEnv <> curEnv, g')
+
+patBinds :: QntPat 'Renamed -> Set LName
+patBinds = \case
+  QntNamePat n -> S.singleton (SrcName n)
+  QntNatLitPat _ -> S.empty
+  QntConstrPat _ ps -> foldMap patBinds ps
+
+freeVars' :: LQntExpr 'Renamed -> Set LName
+freeVars' (L _ e) = freeVars e
+
+freeVars :: QntExpr 'Renamed -> Set LName
+freeVars = \case
+  QntVar (LoclName n) -> S.singleton n
+  QntVar _ -> S.empty
+  QntNatLit _ -> S.empty
+  QntApp e0 e1 -> freeVars' e0 <> freeVars' e1
+  QntLam b e -> S.delete (SrcName b) $ freeVars' e
+  QntCase scrut as -> freeVars' scrut <> foldMap (\(L _ (QntAlt p e)) -> freeVars' e S.\\ patBinds p) as
+
+mkBindGroups :: [(Binder 'Renamed, LQntExpr 'Renamed)] -> [[(Binder 'Renamed, LQntExpr 'Renamed)]]
+mkBindGroups bs =
+  let nodes = bs <&> \(b,e) -> ((b,e), SrcName b, S.toList $ freeVars' e)
+  in G.flattenSCC <$> G.stronglyConnComp nodes
 
 inferBindGroup :: [(Binder 'Renamed, LQntExpr 'Renamed)] -> Infer (TypeEnv, [(Binder 'Typechecked, LQntExpr 'Typechecked)])
 inferBindGroup bs = do
@@ -309,7 +362,7 @@ inferBindGroup bs = do
 
   tvs <- sequenceA $ fresh <$ bs
 
-  let env = TypeEnv $ M.fromList $ zip rnames (Scheme S.empty . TVar <$> tvs)
+  let env = M.fromList $ zip rnames (Scheme S.empty . TVar <$> tvs)
 
   exprs <- withEnv env $
            for (zip bs tvs) $ \((name, L loc e), tv) -> do
@@ -322,7 +375,7 @@ inferBindGroup bs = do
   let types = applySub s . TVar <$> tvs
       schemes = generalize freeTvs <$> types
     
-      finalEnv = TypeEnv $ M.fromList $ zip rnames schemes
+      finalEnv = M.fromList $ zip rnames schemes
 
       binders = zipWith TcBinder names types
 
