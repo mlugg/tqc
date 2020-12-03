@@ -68,8 +68,8 @@ data QntPat p
 
 data QntAlt p = QntAlt (QntPat p) (LQntExpr p)
 
-bindingName :: forall p. (IsPass p) => QntBind p -> Text
-bindingName = \case
+bindName :: forall p. (IsPass p) => QntBind p -> Text
+bindName = \case
   QntImpl n _   -> psBinderName pr n
   QntExpl n _ _ -> psBinderName pr n
   where pr :: Proxy p

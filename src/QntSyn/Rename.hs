@@ -45,7 +45,7 @@ renameExpr = \case
       Just m  -> pure $ QntVar (QualName (Qual m n))
 
   QntLet bs body ->
-    let names = S.fromList $ bindingName <$> bs
+    let names = S.fromList $ bindName <$> bs
     in withLocals names $ do
       bs' <- for bs $ \b ->
         case b of

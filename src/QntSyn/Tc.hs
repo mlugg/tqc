@@ -364,7 +364,7 @@ freeVars = \case
   QntLam b e -> S.delete (SrcName b) $ freeVars' e
   QntCase scrut as -> freeVars' scrut <> foldMap (\(L _ (QntAlt p e)) -> freeVars' e S.\\ patBinds p) as
   QntLet bs e ->
-    let bound = S.fromList $ SrcName . bindingName <$> bs
+    let bound = S.fromList $ SrcName . bindName <$> bs
         exprs = e : fmap bindExpr bs
     in foldMap freeVars' exprs S.\\ bound
 
