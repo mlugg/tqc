@@ -253,7 +253,9 @@ infer = \case
     pure (ta `tArrow` te, QntLam (TcBinder b ta) e')
 
   QntLet bs e -> do
-    _
+    (env, bs') <- inferBinds bs
+    (te, e') <- withEnv env $ infer' e
+    pure (te, QntLet bs' e')
 
   QntCase eScrut as -> do
     (patTypes, exprTypes, as') <-
