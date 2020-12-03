@@ -75,6 +75,11 @@ bindingName = \case
   where pr :: Proxy p
         pr = Proxy
 
+bindExpr :: QntBind p -> LQntExpr p
+bindExpr = \case
+  QntImpl _ e   -> e
+  QntExpl _ e _ -> e
+
 -- }}}
 
 -- Datatype declarations {{{

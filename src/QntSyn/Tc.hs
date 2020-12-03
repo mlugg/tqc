@@ -34,6 +34,9 @@ mapAccumLM f = go where
 
 type TypeEnv = Map RName Scheme
 
+schemeInstanceOf :: Scheme -> Scheme -> Bool
+s0 `schemeInstanceOf` s1 = True -- TODO XXX FIXME
+
 fresh :: Infer TyVar
 fresh = Infer $ \ e s u -> pure (TvUnif u, s, (u+1))
 
@@ -171,6 +174,7 @@ generalize excl ty =
       -- Find the ones where we need to rename the var (each one with a
       -- numeric tyvar)
       renameVars = S.filter (\case { TvName _ -> False; TvUnif _ -> True }) quantVars
+      namedVars  = S.filter (\case { TvName _ -> True;  TvUnif _ -> False }) quantVars
 
       -- Get the list of generated tyvar names we can use
       genNames = filter (\x -> TvName x `S.notMember` allVars) allGenNames
@@ -185,7 +189,7 @@ generalize excl ty =
 
       -- We quantify over both quantVars and the names we're replacing
       -- tyvars with
-      allQuantVars = S.map (\(TvName x) -> x) quantVars <> S.fromList (M.elems tvMapping)
+      allQuantVars = S.map (\(TvName x) -> x) namedVars <> S.fromList (M.elems tvMapping)
 
   in Scheme allQuantVars (replaceTyvars tvMapping' ty)
 
@@ -218,7 +222,7 @@ mgu = curry $ \case
 
   (TVar x, TVar y) -> if x == y
                       then pure mempty
-                      else throwErr _
+                      else pure $ Substitution $ M.singleton x (TVar y)
 
   (TVar v, t) -> if t `containsVar` v
                  then throwErr _
@@ -318,13 +322,25 @@ inferBinds bs = do
 
   (fullEnv, implGroups') <- mapAccumLM f explEnvGiven implGroups
 
-  let implBinds' = mconcat implGroups'
+  let implBinds' = uncurry QntImpl <$> fold implGroups'
 
   -- Everything's inferred, but we need to check the types of the
   -- explicit bindings make sense!
-  -- TODO: that
 
-  _
+  explBinds' <- withEnv fullEnv $
+    for explBinds $ \((n,e),s) -> do
+      (env, g) <- inferBindGroup [(n,e)]
+      let e' = snd $ head g
+
+      let inferred = env M.! LoclName (SrcName n)
+      sub <- getSub
+      let (L loc s') = applySub sub s
+          inferred' = applySub sub inferred
+      if s' `schemeInstanceOf` inferred'
+      then pure $ QntExpl (TcBinder n _) e' (L loc s')
+      else throwErr _
+
+  pure (fullEnv, explBinds' <> implBinds')
 
   where f curEnv g = do
           (newEnv, g') <- withEnv curEnv $ inferBindGroup g
@@ -347,6 +363,10 @@ freeVars = \case
   QntApp e0 e1 -> freeVars' e0 <> freeVars' e1
   QntLam b e -> S.delete (SrcName b) $ freeVars' e
   QntCase scrut as -> freeVars' scrut <> foldMap (\(L _ (QntAlt p e)) -> freeVars' e S.\\ patBinds p) as
+  QntLet bs e ->
+    let bound = S.fromList $ SrcName . bindingName <$> bs
+        exprs = e : fmap bindExpr bs
+    in foldMap freeVars' exprs S.\\ bound
 
 mkBindGroups :: [(Binder 'Renamed, LQntExpr 'Renamed)] -> [[(Binder 'Renamed, LQntExpr 'Renamed)]]
 mkBindGroups bs =
@@ -355,7 +375,7 @@ mkBindGroups bs =
 
 inferBindGroup :: [(Binder 'Renamed, LQntExpr 'Renamed)] -> Infer (TypeEnv, [(Binder 'Typechecked, LQntExpr 'Typechecked)])
 inferBindGroup bs = do
-  freeTvs <- getEnvFreeTvs
+  initFreeTvs <- getEnvFreeTvs
 
   let names  = fst <$> bs
       rnames = LoclName . SrcName <$> names
@@ -373,7 +393,7 @@ inferBindGroup bs = do
   s <- getSub
 
   let types = applySub s . TVar <$> tvs
-      schemes = generalize freeTvs <$> types
+      schemes = generalize initFreeTvs <$> types
     
       finalEnv = M.fromList $ zip rnames schemes
 
