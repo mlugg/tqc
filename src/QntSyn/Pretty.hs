@@ -24,9 +24,9 @@ pPrintType = \case
     then "(" <> x <> ")"
     else x
 
-  TVar x -> x
+  TVar (TvName x) -> x
 
-  TUnif (TyUnif x) -> "α" <> T.pack (show x)
+  TVar (TvUnif x) -> "α" <> T.pack (show x)
 
   TApp x y -> "(" <> pPrintType x <> " " <> pPrintType y <> ")"
 

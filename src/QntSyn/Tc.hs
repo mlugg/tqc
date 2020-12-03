@@ -16,16 +16,16 @@ import Control.Monad
 
 newtype TypeEnv = TypeEnv (Map RName Type)
 
-fresh :: Infer TyUnif
-fresh = Infer $ \ e s u@(TyUnif x) -> pure (u, s, TyUnif (x+1))
+fresh :: Infer TyVar
+fresh = Infer $ \ e s u -> pure (TvUnif u, s, (u+1))
 
 lookupConstr :: Qual -> Infer (Type, DataConstr)
 lookupConstr = _
 
-containsUnif :: Type -> TyUnif -> Bool
-TUnif x    `containsUnif` u = x == u
-TApp t0 t1 `containsUnif` u = t0 `containsUnif` u || t1 `containsUnif` u
-_          `containsUnif` _ = False
+containsVar :: Type -> TyVar -> Bool
+TVar v     `containsVar` u = v == u
+TApp t0 t1 `containsVar` u = t0 `containsVar` u || t1 `containsVar` u
+_          `containsVar` _ = False
 
 singletonTypeEnv :: Text -> Type -> TypeEnv
 singletonTypeEnv n t = TypeEnv $ M.singleton (LoclName $ SrcName n) t
@@ -52,7 +52,7 @@ withType n t m = Infer $ \ (TypeEnv e) s u ->
 
 -- Substitutions {{{
 
-newtype Substitution = Substitution (Map TyUnif Type)
+newtype Substitution = Substitution (Map TyVar Type)
 
 instance Semigroup Substitution where
   s0@(Substitution m0) <> s1 = Substitution $ m1 <> m0
@@ -70,8 +70,7 @@ instance Substitute Substitution where
 instance Substitute Type where
   applySub s@(Substitution m) = \case
     TName n    -> TName n
-    TVar  n    -> TVar  n
-    TUnif u    -> fromMaybe (TUnif u) (M.lookup u m)
+    TVar v     -> fromMaybe (TVar v) (M.lookup v m)
     TApp t0 t1 -> TApp (applySub s t0) (applySub s t1)
 
 instance Substitute Scheme where
@@ -110,7 +109,7 @@ instance (Substitute a) => Substitute (Located a) where
 
 -- Inference monad {{{
 
-newtype Infer a = Infer { runInfer :: TypeEnv -> Substitution -> TyUnif -> Tqc (a, Substitution, TyUnif) }
+newtype Infer a = Infer { runInfer :: TypeEnv -> Substitution -> Integer -> Tqc (a, Substitution, Integer) }
   deriving (Functor)
 
 instance Applicative Infer where
@@ -149,11 +148,12 @@ mgu = curry $ \case
   (TVar x, TVar y) -> if x == y
                       then pure mempty
                       else throwErr _
-  (TUnif u, t) -> if t `containsUnif` u
-                  then throwErr _
-                  else pure $ Substitution $ M.singleton u t
 
-  (t, TUnif u) -> mgu (TUnif u) t
+  (TVar v, t) -> if t `containsVar` v
+                 then throwErr _
+                 else pure $ Substitution $ M.singleton v t
+
+  (t, TVar v) -> mgu (TVar v) t
 
   (TApp t0 t1, TApp t2 t3) -> liftA2 (<>) (mgu t0 t2) (mgu t1 t3)
 
@@ -174,7 +174,7 @@ infer = \case
 
   QntApp ef ea -> do
     ur <- fresh
-    let tr = TUnif ur
+    let tr = TVar ur
 
     (tf, ef') <- infer' ef
     (ta, ea') <- infer' ea
@@ -185,7 +185,7 @@ infer = \case
 
   QntLam b e -> do
     ua <- fresh
-    let ta = TUnif ua
+    let ta = TVar ua
     (te, e') <- withType (LoclName $ SrcName b) ta $ infer' e
 
     pure (ta `tArrow` te, QntLam (TcBinder b ta) e')
@@ -205,7 +205,7 @@ infer = \case
     traverse (unify tScrut) patTypes
 
     ue <- fresh
-    let te = TUnif ue
+    let te = TVar ue
     traverse (unify te) exprTypes
 
     pure (te, QntCase eScrut' as')
@@ -215,7 +215,7 @@ inferPat :: QntPat 'Renamed -> Infer (TypeEnv, Type, QntPat 'Typechecked)
 inferPat = \case
   QntNamePat n -> do
     un <- fresh
-    let tn = TUnif un
+    let tn = TVar un
     pure (singletonTypeEnv n tn, tn, QntNamePat (TcBinder n tn))
 
   QntNatLitPat x ->

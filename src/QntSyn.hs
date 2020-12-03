@@ -91,12 +91,12 @@ data DataConstr = DataConstr Text [Type]
 
 data Type
   = TName Text
-  | TVar Text
-  | TUnif TyUnif
+  | TVar TyVar
   | TApp Type Type
 
-newtype TyUnif = TyUnif Integer
-  deriving (Ord, Eq)
+data TyVar = TvName Text
+           | TvUnif Integer
+           deriving (Ord, Eq)
 
 tArrow :: Type -> Type -> Type
 tArrow t0 t1 = (TApp (TName "->") t0) `TApp` t1
