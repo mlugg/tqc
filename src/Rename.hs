@@ -1,6 +1,6 @@
 {-# LANGUAGE Safe, LambdaCase, DataKinds, DeriveFunctor, OverloadedStrings #-}
 
-module QntSyn.Rename where
+module Rename where
 
 import Tqc
 import QntSyn

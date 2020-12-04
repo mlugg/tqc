@@ -1,6 +1,6 @@
 {-# LANGUAGE LambdaCase, OverloadedStrings, DataKinds, FlexibleInstances, DeriveFunctor, Safe #-}
 
-module QntSyn.Tc where
+module Tc where
 
 import Data.Either
 import Data.Map (Map)
