@@ -50,7 +50,7 @@ renameExpr = \case
       bs' <- for bs $ \b ->
         case b of
           QntImpl n e   -> QntImpl n <$> renameLExpr e
-          QntExpl n e t -> QntExpl n <$> renameLExpr e <*> pure t
+          QntExpl n e s -> QntExpl n <$> renameLExpr e <*> renameLScheme s
 
       body' <- renameLExpr body
 
@@ -96,8 +96,25 @@ renamePat = \case
 renameLAlt :: LQntAlt 'Parsed -> Rename (LQntAlt 'Renamed)
 renameLAlt = traverse renameAlt
 
+renameScheme :: Scheme 'Parsed -> Rename (Scheme 'Renamed)
+renameScheme (Scheme vs t) = Scheme vs <$> renameType t
+
+renameLScheme :: LScheme 'Parsed -> Rename (LScheme 'Renamed)
+renameLScheme = traverse renameScheme
+
+renameType :: Type 'Parsed -> Rename (Type 'Renamed)
+renameType = \case
+  TName n -> findQualifiedType n >>= \case
+               Nothing -> throwErr _
+               Just m  -> pure $ TName (QualName (Qual m n))
+  TVar v     -> pure $ TVar v
+  TApp t0 t1 -> TApp <$> renameType t0 <*> renameType t1
+
 findQualified :: Text -> Rename (Maybe Module)
 findQualified x = pure $ Just $ Module ["Foo", "Bar"] -- XXX TODO
+
+findQualifiedType :: Text -> Rename (Maybe Module)
+findQualifiedType x = pure $ Just $ Module ["Foo", "Bar"] -- XXX TODO
 
 findConstr :: Text -> Rename (Maybe Module)
 findConstr x = pure $ Just $ Module ["Baz", "Faz"] -- XXX TODO

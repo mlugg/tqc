@@ -1,4 +1,4 @@
-{-# LANGUAGE Safe, LambdaCase, ScopedTypeVariables, OverloadedStrings #-}
+{-# LANGUAGE Safe, LambdaCase, ScopedTypeVariables, OverloadedStrings, ViewPatterns #-}
 
 module QntSyn.Pretty where
 
@@ -9,20 +9,21 @@ import Data.Proxy
 import qualified Data.Text as T
 import qualified Data.Set as S
 
-pPrintScheme :: Scheme -> Text
+pPrintScheme :: (IsPass p) => Scheme p -> Text
 pPrintScheme (Scheme univs t) =
   if null univs
   then pPrintType t
   else "∀" <> T.intercalate " " (S.elems univs) <> " . " <> pPrintType t
 
-pPrintType :: Type -> Text
+pPrintType :: forall p. (IsPass p) => Type p -> Text
 pPrintType = \case
-  TApp (TApp (TName "->") x) y -> "(" <> pPrintType x <> " -> " <> pPrintType y <> ")"
+  (psDetectFunTy pr -> Just (t0, t1)) -> "(" <> pPrintType t0 <> " -> " <> pPrintType t1 <> ")"
 
-  TName x ->
-    if isSymbolic x
-    then "(" <> x <> ")"
-    else x
+  TName n ->
+    let n' = psPrintId pr n
+    in if isSymbolic n'
+       then "(" <> n' <> ")"
+       else n'
 
   TVar (TvName x) -> x
 
@@ -31,6 +32,8 @@ pPrintType = \case
   TApp x y -> "(" <> pPrintType x <> " " <> pPrintType y <> ")"
 
   where isSymbolic = not . isAlpha . T.head
+        pr :: Proxy p
+        pr = Proxy
 
 pPrintPat :: forall p. (IsPass p) => QntPat p -> Text
 pPrintPat = \case

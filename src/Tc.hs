@@ -20,6 +20,9 @@ import Data.Traversable
 import Control.Applicative
 import Control.Monad
 
+natType :: Type 'Typechecked
+natType = TName (QualName (Qual (Module ["Data", "Nat"]) "Nat"))
+
 mapAccumLM :: (Monad m)
            => (a -> b -> m (a, c))
            -> a
@@ -33,36 +36,36 @@ mapAccumLM f = go where
     (z1, ys) <- go z0 xs
     pure (z1, y:ys)
 
-type TypeEnv = Map RName Scheme
+type TypeEnv = Map RName (Scheme 'Typechecked)
 
-schemeInstanceOf :: Scheme -> Scheme -> Bool
+schemeInstanceOf :: Scheme 'Typechecked -> Scheme 'Typechecked -> Bool
 _ `schemeInstanceOf` _ = _ -- TODO XXX FIXME
 
 fresh :: Infer TyVar
 fresh = Infer $ \ _ s u -> pure (TvUnif u, s, (u+1))
 
-lookupConstr :: Qual -> Infer (Type, DataConstr)
+lookupConstr :: Qual -> Infer (Type 'Typechecked, DataConstr 'Typechecked)
 lookupConstr = _
 
-containsVar :: Type -> TyVar -> Bool
+containsVar :: Type 'Typechecked -> TyVar -> Bool
 TVar v     `containsVar` u = v == u
 TApp t0 t1 `containsVar` u = t0 `containsVar` u || t1 `containsVar` u
 _          `containsVar` _ = False
 
-singletonTypeEnv :: Text -> Scheme -> TypeEnv
+singletonTypeEnv :: Text -> Scheme 'Typechecked -> TypeEnv
 singletonTypeEnv n t = M.singleton (LoclName $ SrcName n) t
 
-lookupType :: RName -> Infer (Maybe Scheme)
+lookupType :: RName -> Infer (Maybe (Scheme 'Typechecked))
 lookupType n = Infer $ \ e s u ->
   let x = M.lookup n e in pure (x,s,u)
 
-typeVars :: Type -> Set TyVar
+typeVars :: Type 'Typechecked -> Set TyVar
 typeVars = \case
   TName _    -> S.empty
   TVar v     -> S.singleton v
   TApp t0 t1 -> typeVars t0 <> typeVars t1
 
-freeTvs :: Scheme -> Set TyVar
+freeTvs :: Scheme 'Typechecked -> Set TyVar
 freeTvs (Scheme vs t) = typeVars t S.\\ (S.map TvName vs)
 
 getEnvFreeTvs :: Infer (Set TyVar)
@@ -75,14 +78,14 @@ withEnv new m = Infer $ \ e s u ->
   let e' = new <> e
   in runInfer m e' s u
 
-withType :: RName -> Scheme -> Infer a -> Infer a
+withType :: RName -> Scheme 'Typechecked -> Infer a -> Infer a
 withType n t m = Infer $ \ e s u ->
   let e' = M.insert n t e
   in runInfer m e' s u
 
 -- Substitutions {{{
 
-newtype Substitution = Substitution (Map TyVar Type)
+newtype Substitution = Substitution (Map TyVar (Type 'Typechecked))
 
 instance Semigroup Substitution where
   s0@(Substitution m0) <> s1 = Substitution $ m1 <> m0
@@ -97,13 +100,13 @@ class Substitute a where
 instance Substitute Substitution where
   applySub s (Substitution m) = Substitution $ fmap (applySub s) m
 
-instance Substitute Type where
+instance Substitute (Type 'Typechecked) where
   applySub s@(Substitution m) = \case
     TName n    -> TName n
     TVar v     -> fromMaybe (TVar v) (M.lookup v m)
     TApp t0 t1 -> TApp (applySub s t0) (applySub s t1)
 
-instance Substitute Scheme where
+instance Substitute (Scheme 'Typechecked) where
   applySub s (Scheme fs t) = Scheme fs (applySub s t)
 
 instance Substitute TcBinder where
@@ -157,7 +160,7 @@ instance TqcMonad Infer where
 
 -- }}}
 
-replaceTyvars :: Map TyVar Type -> Type -> Type
+replaceTyvars :: Map TyVar (Type 'Typechecked) -> Type 'Typechecked -> Type 'Typechecked
 replaceTyvars m = go where
   go = \case
     TName x    -> TName x
@@ -167,7 +170,7 @@ replaceTyvars m = go where
 partitionEithersSet :: (Ord a, Ord b) => Set (Either a b) -> (Set a, Set b)
 partitionEithersSet = bimap S.fromList S.fromList . partitionEithers . S.toList
 
-generalize :: Set TyVar -> Type -> Scheme
+generalize :: Set TyVar -> Type 'Typechecked -> Scheme 'Typechecked
 generalize excl ty =
       -- Get all the tyvars mentioned in the type
   let allVars = typeVars ty
@@ -199,7 +202,7 @@ generalize excl ty =
   where allGenNames = fmap T.singleton ['a'..'z']
                    ++ fmap (T.cons 'a' . T.pack . show) [0 :: Integer ..]
 
-instantiate :: Scheme -> Infer Type
+instantiate :: Scheme 'Typechecked -> Infer (Type 'Typechecked)
 instantiate (Scheme vs ty) = do
   tvs <- replicateM (S.size vs) fresh
   let m = M.fromList $ zip (TvName <$> S.toList vs) (TVar <$> tvs)
@@ -208,7 +211,7 @@ instantiate (Scheme vs ty) = do
 getSub :: Infer Substitution
 getSub = Infer $ \ _ s u -> pure (s, s, u)
 
-unify :: Type -> Type -> Infer ()
+unify :: Type 'Typechecked -> Type 'Typechecked -> Infer ()
 unify t0 t1 = do
   s  <- getSub
   s' <- mgu (applySub s t0) (applySub s t1)
@@ -217,7 +220,7 @@ unify t0 t1 = do
 extendSub :: Substitution -> Infer ()
 extendSub s' = Infer $ \ _ s u -> pure ((), s <> s', u)
 
-mgu :: Type -> Type -> Infer Substitution
+mgu :: Type 'Typechecked -> Type 'Typechecked -> Infer Substitution
 mgu = curry $ \case
   (TName x, TName y) -> if x == y
                         then pure mempty
@@ -237,10 +240,10 @@ mgu = curry $ \case
 
   _ -> throwErr _
 
-infer' :: LQntExpr 'Renamed -> Infer (Type, LQntExpr 'Typechecked)
+infer' :: LQntExpr 'Renamed -> Infer (Type 'Typechecked, LQntExpr 'Typechecked)
 infer' (L loc e) = infer e <&> \(t,e') -> (t, L loc e')
 
-infer :: QntExpr 'Renamed -> Infer (Type, QntExpr 'Typechecked)
+infer :: QntExpr 'Renamed -> Infer (Type 'Typechecked, QntExpr 'Typechecked)
 infer = \case
   QntVar n ->
     lookupType n >>= \case
@@ -248,7 +251,7 @@ infer = \case
       Just s  -> instantiate s <&> \t -> (t, QntVar n)
 
   QntNatLit x ->
-    pure (TName "Nat", QntNatLit x)
+    pure (natType, QntNatLit x)
 
   QntApp ef ea -> do
     ur <- fresh
@@ -291,7 +294,7 @@ infer = \case
     pure (te, QntCase eScrut' as')
 
 
-inferPat :: QntPat 'Renamed -> Infer (TypeEnv, Type, QntPat 'Typechecked)
+inferPat :: QntPat 'Renamed -> Infer (TypeEnv, Type 'Typechecked, QntPat 'Typechecked)
 inferPat = \case
   QntNamePat n -> do
     un <- fresh
@@ -299,7 +302,7 @@ inferPat = \case
     pure (singletonTypeEnv n (Scheme S.empty tn), tn, QntNamePat (TcBinder n tn))
 
   QntNatLitPat x ->
-    pure (mempty, TName "Nat", QntNatLitPat x)
+    pure (mempty, natType, QntNatLitPat x)
 
   QntConstrPat c ps -> do
     (tConstr, DataConstr _ as) <- lookupConstr c
@@ -313,15 +316,24 @@ inferPat = \case
 
     pure (fold es, tConstr, QntConstrPat c ps')
 
+cvtType :: Type 'Renamed -> Type 'Typechecked
+cvtType = \case
+  TName n    -> TName n
+  TVar v     -> TVar v
+  TApp t0 t1 -> TApp (cvtType t0) (cvtType t1)
+
+cvtScheme :: Scheme 'Renamed -> Scheme 'Typechecked
+cvtScheme (Scheme vs t) = Scheme vs (cvtType t)
+
 inferBinds :: [QntBind 'Renamed] -> Infer (TypeEnv, [QntBind 'Typechecked])
 inferBinds bs = do
   let (implBinds, explBinds) = partitionEithers $ bs <&> \case
-        QntImpl b e   -> Left   (b,e)
-        QntExpl b e s -> Right ((b,e),s)
+        QntImpl b e   -> Left  (b, e)
+        QntExpl b e s -> Right (b, e, cvtScheme <$> s)
 
       implGroups = mkBindGroups implBinds
       
-      explEnvGiven = M.fromList $ explBinds <&> \((n, _), L _ s) -> (LoclName $ SrcName n, s)
+      explEnvGiven = M.fromList $ explBinds <&> \(n, _, L _ s) -> (LoclName $ SrcName n, s)
 
   (fullEnv, implGroups') <- mapAccumLM f explEnvGiven implGroups
 
@@ -331,7 +343,7 @@ inferBinds bs = do
   -- explicit bindings make sense!
 
   explBinds' <- withEnv fullEnv $
-    for explBinds $ \((n,e),s) -> do
+    for explBinds $ \(n,e,s) -> do
       (env, g) <- inferBindGroup [(n,e)]
       let e' = snd $ head g
 

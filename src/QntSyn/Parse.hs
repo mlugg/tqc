@@ -97,7 +97,7 @@ semiTerm x = x <* semi
 -- Top-level parsers {{{
 
 -- Data declarations have the form `data Type a b = Foo a (List b)`
-dataDecl :: Parser DataDecl
+dataDecl :: Parser (DataDecl 'Parsed)
 dataDecl = DataDecl
   <$> (reserved "data" *> identUpperOp)
   <*> many typeParam
@@ -113,7 +113,7 @@ typeParam = flip TyParam KStar <$> identLower
 
 -- A data constructor is just the constructor name followed by the types
 -- of its parameters
-dataConstr :: Parser DataConstr
+dataConstr :: Parser (DataConstr 'Parsed)
 dataConstr = DataConstr <$> identUpperOp <*> many type_
 
 -- }}}
@@ -135,7 +135,7 @@ binding = do
 
 -- binding helpers {{{
 
-typeSig :: Parser (Text, LScheme)
+typeSig :: Parser (Text, LScheme 'Parsed)
 typeSig = label "type signature" $ (,)
   <$> try (identLower <* reservedOp "::")
   <*> typeScheme
@@ -160,18 +160,18 @@ kind = try (KArrow <$> (kTerm <* reservedOp "->") <*> kind)
 
 -- Types {{{
 
-type_ :: Parser Type
+type_ :: Parser (Type 'Parsed)
 type_ = makeExprParser typeTerm
   [ [ InfixL $ pure TApp ]
   , [ InfixR $ (\x y -> TApp (TApp (TName "->") x) y) <$ reservedOp "->" ]
   ]
 
-typeTerm :: Parser Type
+typeTerm :: Parser (Type 'Parsed)
 typeTerm = parens type_
   <|> TName <$> identUpperOp
   <|> TVar . TvName <$> identLower
 
-typeScheme :: Parser LScheme
+typeScheme :: Parser (LScheme 'Parsed)
 typeScheme = located $ polyType <|> (Scheme S.empty <$> type_)
   where
     polyType = Scheme
