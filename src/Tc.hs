@@ -35,10 +35,10 @@ mapAccumLM f = go where
 type TypeEnv = Map RName Scheme
 
 schemeInstanceOf :: Scheme -> Scheme -> Bool
-s0 `schemeInstanceOf` s1 = _ -- TODO XXX FIXME
+_ `schemeInstanceOf` _ = _ -- TODO XXX FIXME
 
 fresh :: Infer TyVar
-fresh = Infer $ \ e s u -> pure (TvUnif u, s, (u+1))
+fresh = Infer $ \ _ s u -> pure (TvUnif u, s, (u+1))
 
 lookupConstr :: Qual -> Infer (Type, DataConstr)
 lookupConstr = _
@@ -142,7 +142,7 @@ newtype Infer a = Infer { runInfer :: TypeEnv -> Substitution -> Integer -> Tqc 
   deriving (Functor)
 
 instance Applicative Infer where
-  pure x = Infer $ \ e s u -> pure (x, s, u)
+  pure x = Infer $ \ _ s u -> pure (x, s, u)
   (<*>) = ap
 
 instance Monad Infer where
@@ -151,7 +151,7 @@ instance Monad Infer where
     runInfer (f x) e s1 u1
 
 instance TqcMonad Infer where
-  lift m = Infer $ \ e s u ->
+  lift m = Infer $ \ _ s u ->
     m <&> \ x -> (x,s,u)
 
 -- }}}
@@ -194,7 +194,7 @@ generalize excl ty =
   in Scheme allQuantVars (replaceTyvars tvMapping' ty)
 
   where allGenNames = fmap T.singleton ['a'..'z']
-                   ++ fmap (T.cons 'a' . T.pack . show) [0..]
+                   ++ fmap (T.cons 'a' . T.pack . show) [0 :: Integer ..]
 
 instantiate :: Scheme -> Infer Type
 instantiate (Scheme vs ty) = do
@@ -203,7 +203,7 @@ instantiate (Scheme vs ty) = do
   pure $ replaceTyvars m ty
 
 getSub :: Infer Substitution
-getSub = Infer $ \ e s u -> pure (s, s, u)
+getSub = Infer $ \ _ s u -> pure (s, s, u)
 
 unify :: Type -> Type -> Infer ()
 unify t0 t1 = do
@@ -212,7 +212,7 @@ unify t0 t1 = do
   extendSub s'
 
 extendSub :: Substitution -> Infer ()
-extendSub s' = Infer $ \ e s u -> pure ((), s <> s', u)
+extendSub s' = Infer $ \ _ s u -> pure ((), s <> s', u)
 
 mgu :: Type -> Type -> Infer Substitution
 mgu = curry $ \case
@@ -279,11 +279,11 @@ infer = \case
         pure (tp, te, L loc $ QntAlt p' e')
 
     (tScrut, eScrut') <- infer' eScrut
-    traverse (unify tScrut) patTypes
+    traverse_ (unify tScrut) patTypes
 
     ue <- fresh
     let te = TVar ue
-    traverse (unify te) exprTypes
+    traverse_ (unify te) exprTypes
 
     pure (te, QntCase eScrut' as')
 
@@ -377,15 +377,15 @@ inferBindGroup :: [(Binder 'Renamed, LQntExpr 'Renamed)] -> Infer (TypeEnv, [(Bi
 inferBindGroup bs = do
   initFreeTvs <- getEnvFreeTvs
 
-  let names  = fst <$> bs
+  let (names, exprs) = unzip bs
       rnames = LoclName . SrcName <$> names
 
   tvs <- sequenceA $ fresh <$ bs
 
   let env = M.fromList $ zip rnames (Scheme S.empty . TVar <$> tvs)
 
-  exprs <- withEnv env $
-           for (zip bs tvs) $ \((name, L loc e), tv) -> do
+  exprs' <- withEnv env $
+           for (zip exprs tvs) $ \(L loc e, tv) -> do
              (t, e') <- infer e
              unify t (TVar tv)
              pure $ L loc e'
@@ -399,4 +399,4 @@ inferBindGroup bs = do
 
       binders = zipWith TcBinder names types
 
-  pure (finalEnv, zip binders exprs)
+  pure (finalEnv, zip binders exprs')
