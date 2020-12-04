@@ -2,6 +2,7 @@
 
 module Tc where
 
+import Data.Bifunctor
 import Data.Either
 import Data.Map (Map)
 import qualified Data.Map as M
@@ -163,6 +164,9 @@ replaceTyvars m = go where
     TVar v     -> M.findWithDefault (TVar v) v m
     TApp t0 t1 -> TApp (go t0) (go t1)
 
+partitionEithersSet :: (Ord a, Ord b) => Set (Either a b) -> (Set a, Set b)
+partitionEithersSet = bimap S.fromList S.fromList . partitionEithers . S.toList
+
 generalize :: Set TyVar -> Type -> Scheme
 generalize excl ty =
       -- Get all the tyvars mentioned in the type
@@ -173,15 +177,14 @@ generalize excl ty =
 
       -- Find the ones where we need to rename the var (each one with a
       -- numeric tyvar)
-      renameVars = S.filter (\case { TvName _ -> False; TvUnif _ -> True }) quantVars
-      namedVars  = S.filter (\case { TvName _ -> True;  TvUnif _ -> False }) quantVars
+      (namedVars, unifVars) = partitionEithersSet $ S.map (\case { TvName n -> Left n; TvUnif u -> Right u }) quantVars
 
       -- Get the list of generated tyvar names we can use
       genNames = filter (\x -> TvName x `S.notMember` allVars) allGenNames
       
       -- Create a mapping from tyvars to tyvar names they should be replaced
       -- with
-      tvMapping = M.fromList $ zip (S.toList renameVars) genNames
+      tvMapping = M.fromList $ zip (S.toList $ S.map TvUnif unifVars) genNames
 
       -- Map TVar . TvName over the above to make a map from tyvars to
       -- the actual types they should be replaced with
@@ -189,7 +192,7 @@ generalize excl ty =
 
       -- We quantify over both quantVars and the names we're replacing
       -- tyvars with
-      allQuantVars = S.map (\(TvName x) -> x) namedVars <> S.fromList (M.elems tvMapping)
+      allQuantVars = namedVars <> S.fromList (M.elems tvMapping)
 
   in Scheme allQuantVars (replaceTyvars tvMapping' ty)
 
