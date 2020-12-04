@@ -35,7 +35,7 @@ mapAccumLM f = go where
 type TypeEnv = Map RName Scheme
 
 schemeInstanceOf :: Scheme -> Scheme -> Bool
-s0 `schemeInstanceOf` s1 = True -- TODO XXX FIXME
+s0 `schemeInstanceOf` s1 = _ -- TODO XXX FIXME
 
 fresh :: Infer TyVar
 fresh = Infer $ \ e s u -> pure (TvUnif u, s, (u+1))
