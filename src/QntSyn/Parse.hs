@@ -135,7 +135,7 @@ binding = do
 
 -- binding helpers {{{
 
-typeSig :: Parser (Text, LScheme 'Parsed)
+typeSig :: Parser (Text, LScheme Text)
 typeSig = label "type signature" $ (,)
   <$> try (identLower <* reservedOp "::")
   <*> typeScheme
@@ -160,18 +160,18 @@ kind = try (KArrow <$> (kTerm <* reservedOp "->") <*> kind)
 
 -- Types {{{
 
-type_ :: Parser (Type 'Parsed)
+type_ :: Parser (Type Text)
 type_ = makeExprParser typeTerm
   [ [ InfixL $ pure TApp ]
   , [ InfixR $ (\x y -> TApp (TApp (TName "->") x) y) <$ reservedOp "->" ]
   ]
 
-typeTerm :: Parser (Type 'Parsed)
+typeTerm :: Parser (Type Text)
 typeTerm = parens type_
   <|> TName <$> identUpperOp
   <|> TVar . TvName <$> identLower
 
-typeScheme :: Parser (LScheme 'Parsed)
+typeScheme :: Parser (LScheme Text)
 typeScheme = located $ polyType <|> (Scheme S.empty <$> type_)
   where
     polyType = Scheme

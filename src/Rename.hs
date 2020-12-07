@@ -96,13 +96,13 @@ renamePat = \case
 renameLAlt :: LQntAlt 'Parsed -> Rename (LQntAlt 'Renamed)
 renameLAlt = traverse renameAlt
 
-renameScheme :: Scheme 'Parsed -> Rename (Scheme 'Renamed)
+renameScheme :: Scheme Text -> Rename (Scheme RName)
 renameScheme (Scheme vs t) = Scheme vs <$> renameType t
 
-renameLScheme :: LScheme 'Parsed -> Rename (LScheme 'Renamed)
+renameLScheme :: LScheme Text -> Rename (LScheme RName)
 renameLScheme = traverse renameScheme
 
-renameType :: Type 'Parsed -> Rename (Type 'Renamed)
+renameType :: Type Text -> Rename (Type RName)
 renameType = \case
   TName n -> findQualifiedType n >>= \case
                Nothing -> throwErr _

@@ -40,12 +40,12 @@ type family Binder p where
   Binder 'Renamed = Text
   Binder 'Typechecked = TcBinder
 
-data TcBinder = TcBinder Text (Type 'Typechecked)
+data TcBinder = TcBinder Text (Type RName)
 
 -- Aliases for located forms of various syntactic constructs
 type LQntExpr p = Located (QntExpr p)
 type LQntAlt p = Located (QntAlt p)
-type LScheme p = Located (Scheme p)
+type LScheme id = Located (Scheme id)
 
 -- Expressions {{{
 
@@ -59,7 +59,7 @@ data QntExpr p
 
 data QntBind p
   = QntImpl (Binder p) (LQntExpr p)
-  | QntExpl (Binder p) (LQntExpr p) (LScheme p)
+  | QntExpl (Binder p) (LQntExpr p) (LScheme (Id p))
 
 data QntPat p
   = QntNamePat (Binder p)
@@ -88,25 +88,25 @@ data DataDecl p = DataDecl Text [TyParam] [DataConstr p]
 
 data TyParam = TyParam Text Kind
 
-data DataConstr p = DataConstr Text [Type p]
+data DataConstr p = DataConstr Text [Type (Id p)]
 
 -- }}}
 
 -- Types {{{
 
-data Type p
-  = TName (Id p)
+data Type id
+  = TName id
   | TVar TyVar
-  | TApp (Type p) (Type p)
+  | TApp (Type id) (Type id)
 
 data TyVar = TvName Text
            | TvUnif Integer
            deriving (Ord, Eq)
 
-tArrow :: (Id p ~ RName) => Type p -> Type p -> Type p
+tArrow :: Type RName -> Type RName -> Type RName
 tArrow t0 t1 = (TApp (TName (QualName (Qual (Module []) "->"))) t0) `TApp` t1
 
-data Scheme p = Scheme (Set Text) (Type p)
+data Scheme id = Scheme (Set Text) (Type id)
 
 -- }}}
 
@@ -131,10 +131,10 @@ data QntProg p
 class IsPass p where
   psPrintId    :: Proxy p -> Id p     -> Text
   psBinderName :: Proxy p -> Binder p -> Text
-  psBinderType :: Proxy p -> Binder p -> Maybe (Type p)
+  psBinderType :: Proxy p -> Binder p -> Maybe (Type (Id p))
   psConstrName :: Proxy p -> Constr p -> Text
 
-  psDetectFunTy :: Proxy p -> Type p -> Maybe (Type p, Type p)
+  psDetectFunTy :: Proxy p -> Type (Id p) -> Maybe (Type (Id p), Type (Id p))
 
 instance IsPass 'Parsed where
   psPrintId    _ x = x

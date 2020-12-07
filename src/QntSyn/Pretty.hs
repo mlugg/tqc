@@ -9,15 +9,15 @@ import Data.Proxy
 import qualified Data.Text as T
 import qualified Data.Set as S
 
-pPrintScheme :: (IsPass p) => Scheme p -> Text
-pPrintScheme (Scheme univs t) =
+pPrintScheme :: (IsPass p) => Proxy p -> Scheme (Id p) -> Text
+pPrintScheme pr (Scheme univs t) =
   if null univs
-  then pPrintType t
-  else "∀" <> T.intercalate " " (S.elems univs) <> " . " <> pPrintType t
+  then pPrintType pr t
+  else "∀" <> T.intercalate " " (S.elems univs) <> " . " <> pPrintType pr t
 
-pPrintType :: forall p. (IsPass p) => Type p -> Text
-pPrintType = \case
-  (psDetectFunTy pr -> Just (t0, t1)) -> "(" <> pPrintType t0 <> " -> " <> pPrintType t1 <> ")"
+pPrintType :: forall p. (IsPass p) => Proxy p -> Type (Id p) -> Text
+pPrintType pr = \case
+  (psDetectFunTy pr -> Just (t0, t1)) -> "(" <> pPrintType pr t0 <> " -> " <> pPrintType pr t1 <> ")"
 
   TName n ->
     let n' = psPrintId pr n
@@ -29,7 +29,7 @@ pPrintType = \case
 
   TVar (TvUnif x) -> "α" <> T.pack (show x)
 
-  TApp x y -> "(" <> pPrintType x <> " " <> pPrintType y <> ")"
+  TApp x y -> "(" <> pPrintType pr x <> " " <> pPrintType pr y <> ")"
 
   where isSymbolic = not . isAlpha . T.head
         pr :: Proxy p
@@ -106,7 +106,7 @@ pPrintBind = \case
   QntExpl x (L _ e) (L _ t) -> mconcat
     [ pPrintBinder pr x
     , " :: "
-    , pPrintScheme t
+    , pPrintScheme pr t
     , "; "
     , pPrintBinder pr x
     , " = "
@@ -122,6 +122,6 @@ pPrintBinder pr b = case psBinderType pr b of
     [ "("
     , psBinderName pr b
     , " :: "
-    , pPrintType t
+    , pPrintType pr t
     , ")"
     ]
