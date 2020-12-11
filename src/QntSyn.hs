@@ -98,6 +98,7 @@ data Type id
   = TName id
   | TVar TyVar
   | TApp (Type id) (Type id)
+  deriving (Eq)
 
 data TyVar = TvName Text
            | TvUnif Integer

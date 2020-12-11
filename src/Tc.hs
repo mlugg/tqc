@@ -6,6 +6,7 @@ import Data.Bifunctor
 import Data.Either
 import Data.Map (Map)
 import qualified Data.Map as M
+import Data.Map.Merge.Lazy
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Text (Text)
@@ -20,6 +21,47 @@ import Data.Traversable
 import Control.Applicative
 import Control.Monad
 
+-- Check whether one scheme can be an instance of another; i.e. is the
+-- second at least as general as the first
+isInstanceOf :: (Eq a) => Scheme a -> Scheme a -> Bool
+s0 `isInstanceOf` s1 = isJust $ s0 `asInstanceOf` s1
+
+-- Find a tyvar substitution that makes one scheme an instance of
+-- another
+asInstanceOf :: (Eq a) => Scheme a -> Scheme a -> Maybe (Map TyVar (Type a))
+Scheme vsL tL `asInstanceOf` Scheme vsR tR = case (tL,tR) of
+  (t, TVar n) -> do
+    if n `S.member` vsR'
+    then Just $ M.singleton n t -- Quantified in the RHS scheme, so can be anything in the LHS scheme
+    else if n `S.member` vsL'
+         then Nothing -- Var is quantified over in the LHS scheme but not the RHS, so they refer to different things
+         else if t == TVar n
+              then Just mempty -- Not quantified in either scheme and equivalent so refer to same type
+              else Nothing -- Not quantified in either but not equivalent so refer to different types
+  
+
+  (TApp t0 t1, TApp t0' t1') -> do
+    soln0 <- Scheme vsL t0 `asInstanceOf` Scheme vsR t0'
+    soln1 <- Scheme vsL t1 `asInstanceOf` Scheme vsR t1'
+    combine soln0 soln1
+
+  (_, TApp _ _) -> Nothing
+
+  (t, TName n) ->
+    if t == TName n
+    then Just mempty
+    else Nothing
+
+  where vsL' = S.map TvName vsL
+        vsR' = S.map TvName vsR
+        combine = mergeA
+          preserveMissing
+          preserveMissing
+          (zipWithAMatched $
+            \ _ t0 t1 -> if t0 == t1
+                         then Just t0
+                         else Nothing)
+    
 natType :: Type RName
 natType = TName (QualName (Qual (Module ["Data", "Nat"]) "Nat"))
 
@@ -37,9 +79,6 @@ mapAccumLM f = go where
     pure (z1, y:ys)
 
 type TypeEnv = Map RName (Scheme RName)
-
-schemeInstanceOf :: Scheme RName -> Scheme RName -> Bool
-_ `schemeInstanceOf` _ = _ -- TODO XXX FIXME
 
 fresh :: Infer TyVar
 fresh = Infer $ \ _ s u -> pure (TvUnif u, s, (u+1))
@@ -214,31 +253,32 @@ getSub = Infer $ \ _ s u -> pure (s, s, u)
 unify :: Type RName -> Type RName -> Infer ()
 unify t0 t1 = do
   s  <- getSub
-  s' <- mgu (applySub s t0) (applySub s t1)
-  extendSub s'
+  case mgu (applySub s t0) (applySub s t1) of
+    Left e   -> throwErr e
+    Right s' -> extendSub s'
 
 extendSub :: Substitution -> Infer ()
 extendSub s' = Infer $ \ _ s u -> pure ((), s <> s', u)
 
-mgu :: Type RName -> Type RName -> Infer Substitution
+mgu :: Type RName -> Type RName -> Either CompileError Substitution
 mgu = curry $ \case
   (TName x, TName y) -> if x == y
-                        then pure mempty
-                        else throwErr _
+                        then Right mempty
+                        else Left _
 
   (TVar x, TVar y) -> if x == y
-                      then pure mempty
-                      else pure $ Substitution $ M.singleton x (TVar y)
+                      then Right mempty
+                      else Right $ Substitution $ M.singleton x (TVar y)
 
   (TVar v, t) -> if t `containsVar` v
-                 then throwErr _
-                 else pure $ Substitution $ M.singleton v t
+                 then Left _
+                 else Right $ Substitution $ M.singleton v t
 
   (t, TVar v) -> mgu (TVar v) t
 
   (TApp t0 t1, TApp t2 t3) -> liftA2 (<>) (mgu t0 t2) (mgu t1 t3)
 
-  _ -> throwErr _
+  _ -> Left _
 
 infer' :: LQntExpr 'Renamed -> Infer (Type RName, LQntExpr 'Typechecked)
 infer' (L loc e) = infer e <&> \(t,e') -> (t, L loc e')
@@ -342,7 +382,7 @@ inferBinds bs = do
       sub <- getSub
       let (L loc s') = applySub sub s
           inferred' = applySub sub inferred
-      if s' `schemeInstanceOf` inferred'
+      if s' `isInstanceOf` inferred'
       then pure $ QntExpl (TcBinder n _) e' (L loc s')
       else throwErr _
 
