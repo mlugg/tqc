@@ -153,6 +153,12 @@ checkKind t = getKind t >>= \case
   KStar -> pure ()
   _     -> throwErr _
 
+withKindCheck :: Infer (Type Qual, a) -> Infer (Type Qual, a)
+withKindCheck m = do
+  (t,x) <- m
+  checkKind t
+  pure (t,x)
+
 -- Substitutions {{{
 
 newtype Substitution = Substitution (Map TyVar (Type Qual))
@@ -315,7 +321,7 @@ infer' :: LQntExpr 'Renamed -> Infer (Type Qual, LQntExpr 'Typechecked)
 infer' (L loc e) = infer e <&> \(t,e') -> (t, L loc e')
 
 infer :: QntExpr 'Renamed -> Infer (Type Qual, QntExpr 'Typechecked)
-infer = \case
+infer = withKindCheck . \case
   QntVar n ->
     lookupType n >>= \case
       Nothing -> throwErr _
