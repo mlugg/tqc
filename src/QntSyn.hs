@@ -25,6 +25,12 @@ type family Id p where
   Id 'Renamed = RName
   Id 'Typechecked = RName
 
+-- Similar to Id, but for type names.
+type family TyId p where
+  TyId 'Parsed = Text
+  TyId 'Renamed = Qual
+  TyId 'Typechecked = Qual
+
 -- A constructor reference for the given pass; used in QntConstrPat. The
 -- renamer resolves the constructors and qualifies them with the module
 -- they originate from.
@@ -40,7 +46,7 @@ type family Binder p where
   Binder 'Renamed = Text
   Binder 'Typechecked = TcBinder
 
-data TcBinder = TcBinder Text (Type RName)
+data TcBinder = TcBinder Text (Type Qual)
 
 -- Aliases for located forms of various syntactic constructs
 type LQntExpr p = Located (QntExpr p)
@@ -59,7 +65,7 @@ data QntExpr p
 
 data QntBind p
   = QntImpl (Binder p) (LQntExpr p)
-  | QntExpl (Binder p) (LQntExpr p) (LScheme (Id p))
+  | QntExpl (Binder p) (LQntExpr p) (LScheme (TyId p))
 
 data QntPat p
   = QntNamePat (Binder p)
@@ -88,7 +94,7 @@ data DataDecl p = DataDecl Text [TyParam] [DataConstr p]
 
 data TyParam = TyParam Text Kind
 
-data DataConstr p = DataConstr Text [Type (Id p)]
+data DataConstr p = DataConstr Text [Type (TyId p)]
 
 -- }}}
 
@@ -104,8 +110,8 @@ data TyVar = TvName Text
            | TvUnif Integer
            deriving (Ord, Eq)
 
-tArrow :: Type RName -> Type RName -> Type RName
-tArrow t0 t1 = (TApp (TName (QualName (Qual (Module []) "->"))) t0) `TApp` t1
+tArrow :: Type Qual -> Type Qual -> Type Qual
+tArrow t0 t1 = (TApp (TName (Qual (Module []) "->")) t0) `TApp` t1
 
 data Scheme id = Scheme (Set Text) (Type id)
 
@@ -116,6 +122,7 @@ data Scheme id = Scheme (Set Text) (Type id)
 data Kind
   = KStar
   | KArrow Kind Kind
+  deriving (Eq)
 
 -- }}}
 
@@ -131,14 +138,16 @@ data QntProg p
 -- be prefixed 'ps' for 'pass'.
 class IsPass p where
   psPrintId    :: Proxy p -> Id p     -> Text
+  psPrintTyId  :: Proxy p -> TyId p   -> Text
   psBinderName :: Proxy p -> Binder p -> Text
-  psBinderType :: Proxy p -> Binder p -> Maybe (Type (Id p))
+  psBinderType :: Proxy p -> Binder p -> Maybe (Type (TyId p))
   psConstrName :: Proxy p -> Constr p -> Text
 
-  psDetectFunTy :: Proxy p -> Type (Id p) -> Maybe (Type (Id p), Type (Id p))
+  psDetectFunTy :: Proxy p -> Type (TyId p) -> Maybe (Type (TyId p), Type (TyId p))
 
 instance IsPass 'Parsed where
   psPrintId    _ x = x
+  psPrintTyId  _ x = x
   psBinderName _ x = x
   psBinderType _ _ = Nothing
   psConstrName _ x = x
@@ -154,23 +163,26 @@ instance IsPass 'Renamed where
     LoclName (SrcName x) -> x
     LoclName (GenName x) -> "%" <> x
 
+  psPrintTyId _ (Qual (Module ms) x) = T.intercalate "." ms <> "." <> x
+
   psBinderName _ x = x
   psBinderType _ _ = Nothing
 
   psConstrName _ (Qual (Module ms) x) = T.intercalate "." ms <> "." <> x
 
   psDetectFunTy _ = \case
-    TApp (TApp (TName (QualName (Qual (Module []) "->"))) t0) t1 -> Just (t0,t1)
+    TApp (TApp (TName (Qual (Module []) "->")) t0) t1 -> Just (t0,t1)
     _ -> Nothing
 
 instance IsPass 'Typechecked where
   psPrintId _ = psPrintId (Proxy :: Proxy 'Renamed)
+  psPrintTyId _ = psPrintTyId (Proxy :: Proxy 'Renamed)
   psBinderName _ (TcBinder x _) = x
   psBinderType _ (TcBinder _ t) = Just t
   psConstrName _ = psConstrName (Proxy :: Proxy 'Renamed)
 
   psDetectFunTy _ = \case
-    TApp (TApp (TName (QualName (Qual (Module []) "->"))) t0) t1 -> Just (t0,t1)
+    TApp (TApp (TName (Qual (Module []) "->")) t0) t1 -> Just (t0,t1)
     _ -> Nothing
 
 -- }}}

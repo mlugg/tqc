@@ -9,18 +9,18 @@ import Data.Proxy
 import qualified Data.Text as T
 import qualified Data.Set as S
 
-pPrintScheme :: (IsPass p) => Proxy p -> Scheme (Id p) -> Text
+pPrintScheme :: (IsPass p) => Proxy p -> Scheme (TyId p) -> Text
 pPrintScheme pr (Scheme univs t) =
   if null univs
   then pPrintType pr t
   else "∀" <> T.intercalate " " (S.elems univs) <> " . " <> pPrintType pr t
 
-pPrintType :: forall p. (IsPass p) => Proxy p -> Type (Id p) -> Text
+pPrintType :: forall p. (IsPass p) => Proxy p -> Type (TyId p) -> Text
 pPrintType pr = \case
   (psDetectFunTy pr -> Just (t0, t1)) -> "(" <> pPrintType pr t0 <> " -> " <> pPrintType pr t1 <> ")"
 
   TName n ->
-    let n' = psPrintId pr n
+    let n' = psPrintTyId pr n
     in if isSymbolic n'
        then "(" <> n' <> ")"
        else n'

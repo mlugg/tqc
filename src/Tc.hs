@@ -62,8 +62,8 @@ Scheme vsL tL `asInstanceOf` Scheme vsR tR = case (tL,tR) of
                          then Just t0
                          else Nothing)
     
-natType :: Type RName
-natType = TName (QualName (Qual (Module ["Data", "Nat"]) "Nat"))
+natType :: Type Qual
+natType = TName (Qual (Module ["Data", "Nat"]) "Nat")
 
 mapAccumLM :: (Monad m)
            => (a -> b -> m (a, c))
@@ -78,53 +78,84 @@ mapAccumLM f = go where
     (z1, ys) <- go z0 xs
     pure (z1, y:ys)
 
-type TypeEnv = Map RName (Scheme RName)
+type TypeEnv = Map RName (Scheme Qual)
+type KindEnv = Map Qual Kind
+type ConstrEnv = Map Qual (Type Qual, [Type Qual])
 
 fresh :: Infer TyVar
-fresh = Infer $ \ _ s u -> pure (TvUnif u, s, (u+1))
+fresh = Infer $ \ _ _ _ s u -> pure (TvUnif u, s, (u+1))
 
-lookupConstr :: Qual -> Infer (Type RName, DataConstr 'Typechecked)
-lookupConstr = _
+lookupConstr :: Qual -> Infer (Type Qual, [Type Qual])
+lookupConstr c = lookupConstr' c >>= \case
+  Just x  -> pure x
+  Nothing -> throwErr _
 
-containsVar :: Type RName -> TyVar -> Bool
+lookupConstr' :: Qual -> Infer (Maybe (Type Qual, [Type Qual]))
+lookupConstr' c = Infer $ \ _ _ e s u -> pure (M.lookup c e, s, u)
+
+containsVar :: Type Qual -> TyVar -> Bool
 TVar v     `containsVar` u = v == u
 TApp t0 t1 `containsVar` u = t0 `containsVar` u || t1 `containsVar` u
 _          `containsVar` _ = False
 
-singletonTypeEnv :: Text -> Scheme RName -> TypeEnv
+singletonTypeEnv :: Text -> Scheme Qual -> TypeEnv
 singletonTypeEnv n t = M.singleton (LoclName $ SrcName n) t
 
-lookupType :: RName -> Infer (Maybe (Scheme RName))
-lookupType n = Infer $ \ e s u ->
+lookupType :: RName -> Infer (Maybe (Scheme Qual))
+lookupType n = Infer $ \ e _ _ s u ->
   let x = M.lookup n e in pure (x,s,u)
 
-typeVars :: Type RName -> Set TyVar
+lookupKind :: Qual -> Infer (Maybe Kind)
+lookupKind n = Infer $ \ _ e _ s u ->
+  let x = M.lookup n e in pure (x,s,u)
+
+typeVars :: Type Qual -> Set TyVar
 typeVars = \case
   TName _    -> S.empty
   TVar v     -> S.singleton v
   TApp t0 t1 -> typeVars t0 <> typeVars t1
 
-freeTvs :: Scheme RName -> Set TyVar
+freeTvs :: Scheme Qual -> Set TyVar
 freeTvs (Scheme vs t) = typeVars t S.\\ (S.map TvName vs)
 
 getEnvFreeTvs :: Infer (Set TyVar)
-getEnvFreeTvs = Infer $ \ e s u ->
+getEnvFreeTvs = Infer $ \ e _ _ s u ->
   let vs = foldMap freeTvs e
   in pure (vs,s,u)
 
 withEnv :: TypeEnv -> Infer a -> Infer a
-withEnv new m = Infer $ \ e s u ->
-  let e' = new <> e
-  in runInfer m e' s u
+withEnv new m = Infer $ \ te ke ce s u ->
+  let te' = new <> te
+  in runInfer m te' ke ce s u
 
-withType :: RName -> Scheme RName -> Infer a -> Infer a
-withType n t m = Infer $ \ e s u ->
-  let e' = M.insert n t e
-  in runInfer m e' s u
+withType :: RName -> Scheme Qual -> Infer a -> Infer a
+withType n t m = Infer $ \ te ke ce s u ->
+  let te' = M.insert n t te
+  in runInfer m te' ke ce s u
+
+getKind :: Type Qual -> Infer Kind
+getKind = \case
+  TName n ->
+    lookupKind n >>= \case
+      Just k -> pure k
+      Nothing -> throwErr _
+
+  TVar _ -> pure KStar
+
+  TApp t0 t1 -> do
+    k <- getKind t1
+    getKind t0 >>= \case
+      KArrow kl kr | kl == k -> pure kr
+      _ -> throwErr _
+
+checkKind :: Type Qual -> Infer ()
+checkKind t = getKind t >>= \case
+  KStar -> pure ()
+  _     -> throwErr _
 
 -- Substitutions {{{
 
-newtype Substitution = Substitution (Map TyVar (Type RName))
+newtype Substitution = Substitution (Map TyVar (Type Qual))
 
 instance Semigroup Substitution where
   s0@(Substitution m0) <> s1 = Substitution $ m1 <> m0
@@ -139,13 +170,13 @@ class Substitute a where
 instance Substitute Substitution where
   applySub s (Substitution m) = Substitution $ fmap (applySub s) m
 
-instance Substitute (Type RName) where
+instance Substitute (Type Qual) where
   applySub s@(Substitution m) = \case
     TName n    -> TName n
     TVar v     -> fromMaybe (TVar v) (M.lookup v m)
     TApp t0 t1 -> TApp (applySub s t0) (applySub s t1)
 
-instance Substitute (Scheme RName) where
+instance Substitute (Scheme Qual) where
   applySub s (Scheme fs t) = Scheme fs (applySub s t)
 
 instance Substitute TcBinder where
@@ -181,25 +212,25 @@ instance (Substitute a) => Substitute (Located a) where
 
 -- Inference monad {{{
 
-newtype Infer a = Infer { runInfer :: TypeEnv -> Substitution -> Integer -> Tqc (a, Substitution, Integer) }
+newtype Infer a = Infer { runInfer :: TypeEnv -> KindEnv -> ConstrEnv -> Substitution -> Integer -> Tqc (a, Substitution, Integer) }
   deriving (Functor)
 
 instance Applicative Infer where
-  pure x = Infer $ \ _ s u -> pure (x, s, u)
+  pure x = Infer $ \ _ _ _ s u -> pure (x, s, u)
   (<*>) = ap
 
 instance Monad Infer where
-  m >>= f = Infer $ \ e s0 u0 -> do
-    (x,s1,u1) <- runInfer m e s0 u0
-    runInfer (f x) e s1 u1
+  m >>= f = Infer $ \ te ke ce s0 u0 -> do
+    (x,s1,u1) <- runInfer m te ke ce s0 u0
+    runInfer (f x) te ke ce s1 u1
 
 instance TqcMonad Infer where
-  lift m = Infer $ \ _ s u ->
+  lift m = Infer $ \ _ _ _ s u ->
     m <&> \ x -> (x,s,u)
 
 -- }}}
 
-replaceTyvars :: Map TyVar (Type RName) -> Type RName -> Type RName
+replaceTyvars :: Map TyVar (Type Qual) -> Type Qual -> Type Qual
 replaceTyvars m = go where
   go = \case
     TName x    -> TName x
@@ -209,7 +240,7 @@ replaceTyvars m = go where
 partitionEithersSet :: (Ord a, Ord b) => Set (Either a b) -> (Set a, Set b)
 partitionEithersSet = bimap S.fromList S.fromList . partitionEithers . S.toList
 
-generalize :: Set TyVar -> Type RName -> Scheme RName
+generalize :: Set TyVar -> Type Qual -> Scheme Qual
 generalize excl ty =
       -- Get all the tyvars mentioned in the type
   let allVars = typeVars ty
@@ -241,16 +272,16 @@ generalize excl ty =
   where allGenNames = fmap T.singleton ['a'..'z']
                    ++ fmap (T.cons 'a' . T.pack . show) [0 :: Integer ..]
 
-instantiate :: Scheme RName -> Infer (Type RName)
+instantiate :: Scheme Qual -> Infer (Type Qual)
 instantiate (Scheme vs ty) = do
   tvs <- replicateM (S.size vs) fresh
   let m = M.fromList $ zip (TvName <$> S.toList vs) (TVar <$> tvs)
   pure $ replaceTyvars m ty
 
 getSub :: Infer Substitution
-getSub = Infer $ \ _ s u -> pure (s, s, u)
+getSub = Infer $ \ _ _ _ s u -> pure (s, s, u)
 
-unify :: Type RName -> Type RName -> Infer ()
+unify :: Type Qual -> Type Qual -> Infer ()
 unify t0 t1 = do
   s  <- getSub
   case mgu (applySub s t0) (applySub s t1) of
@@ -258,9 +289,9 @@ unify t0 t1 = do
     Right s' -> extendSub s'
 
 extendSub :: Substitution -> Infer ()
-extendSub s' = Infer $ \ _ s u -> pure ((), s <> s', u)
+extendSub s' = Infer $ \ _ _ _ s u -> pure ((), s <> s', u)
 
-mgu :: Type RName -> Type RName -> Either CompileError Substitution
+mgu :: Type Qual -> Type Qual -> Either CompileError Substitution
 mgu = curry $ \case
   (TName x, TName y) -> if x == y
                         then Right mempty
@@ -280,10 +311,10 @@ mgu = curry $ \case
 
   _ -> Left _
 
-infer' :: LQntExpr 'Renamed -> Infer (Type RName, LQntExpr 'Typechecked)
+infer' :: LQntExpr 'Renamed -> Infer (Type Qual, LQntExpr 'Typechecked)
 infer' (L loc e) = infer e <&> \(t,e') -> (t, L loc e')
 
-infer :: QntExpr 'Renamed -> Infer (Type RName, QntExpr 'Typechecked)
+infer :: QntExpr 'Renamed -> Infer (Type Qual, QntExpr 'Typechecked)
 infer = \case
   QntVar n ->
     lookupType n >>= \case
@@ -334,7 +365,7 @@ infer = \case
     pure (te, QntCase eScrut' as')
 
 
-inferPat :: QntPat 'Renamed -> Infer (TypeEnv, Type RName, QntPat 'Typechecked)
+inferPat :: QntPat 'Renamed -> Infer (TypeEnv, Type Qual, QntPat 'Typechecked)
 inferPat = \case
   QntNamePat n -> do
     un <- fresh
@@ -345,7 +376,7 @@ inferPat = \case
     pure (mempty, natType, QntNatLitPat x)
 
   QntConstrPat c ps -> do
-    (tConstr, DataConstr _ as) <- lookupConstr c
+    (tConstr, as) <- lookupConstr c
 
     (es,ps') <-
       fmap unzip $
@@ -382,8 +413,9 @@ inferBinds bs = do
       sub <- getSub
       let (L loc s') = applySub sub s
           inferred' = applySub sub inferred
+          Scheme _ ty' = s'
       if s' `isInstanceOf` inferred'
-      then pure $ QntExpl (TcBinder n _) e' (L loc s')
+      then pure $ QntExpl (TcBinder n ty') e' (L loc s')
       else throwErr _
 
   pure (fullEnv, explBinds' <> implBinds')
