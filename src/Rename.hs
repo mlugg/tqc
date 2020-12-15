@@ -9,6 +9,7 @@ import Data.Set (Set)
 import qualified Data.Set as S
 import Control.Monad
 import Data.Traversable
+import Common
 
 newtype Rename a = Rename { runRename :: Set Text -> Tqc a }
   deriving (Functor)

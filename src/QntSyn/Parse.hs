@@ -3,7 +3,7 @@
 module QntSyn.Parse where
 
 import QntSyn
-import Tqc
+import Common
 import Data.Void
 import Control.Monad
 import Numeric.Natural

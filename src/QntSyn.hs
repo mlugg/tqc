@@ -9,7 +9,7 @@
 
 module QntSyn where
 
-import Tqc
+import Common
 import Data.Text (Text)
 import qualified Data.Text as T
 import Numeric.Natural

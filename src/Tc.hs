@@ -14,12 +14,28 @@ import qualified Data.Text as T
 import qualified Data.Graph as G
 import Data.Foldable
 import Tqc
+import Common
 import QntSyn
 import Data.Functor
 import Data.Maybe
 import Data.Traversable
 import Control.Applicative
 import Control.Monad
+
+wrapTypeError :: (TypeError -> TypeError) -> Infer a -> Infer a
+wrapTypeError f m = Infer $ \ te ke ce s u ->
+  runInfer m te ke ce s u `tqcCatchErr` \case
+    TypeErr tErr -> throwErr $ TypeErr (f tErr)
+    err          -> throwErr err
+
+withErrorExpr :: QntExpr 'Renamed -> Infer a -> Infer a
+withErrorExpr e = wrapTypeError $ TeInExpr e
+
+withErrorScheme :: Scheme RName -> Infer a -> Infer a
+withErrorScheme e = wrapTypeError $ TeInScheme e
+
+throwTypeErr :: TypeError -> Infer a
+throwTypeErr = throwErr . TypeErr
 
 -- Check whether one scheme can be an instance of another; i.e. is the
 -- second at least as general as the first
@@ -88,7 +104,7 @@ fresh = Infer $ \ _ _ _ s u -> pure (TvUnif u, s, (u+1))
 lookupConstr :: Qual -> Infer (Type Qual, [Type Qual])
 lookupConstr c = lookupConstr' c >>= \case
   Just x  -> pure x
-  Nothing -> throwErr _
+  Nothing -> throwTypeErr _
 
 lookupConstr' :: Qual -> Infer (Maybe (Type Qual, [Type Qual]))
 lookupConstr' c = Infer $ \ _ _ e s u -> pure (M.lookup c e, s, u)
@@ -138,7 +154,7 @@ getKind = \case
   TName n ->
     lookupKind n >>= \case
       Just k -> pure k
-      Nothing -> throwErr _
+      Nothing -> throwTypeErr _
 
   TVar _ -> pure KStar
 
@@ -146,12 +162,12 @@ getKind = \case
     k <- getKind t1
     getKind t0 >>= \case
       KArrow kl kr | kl == k -> pure kr
-      _ -> throwErr _
+      _ -> throwTypeErr _
 
 checkKind :: Type Qual -> Infer ()
 checkKind t = getKind t >>= \case
   KStar -> pure ()
-  _     -> throwErr _
+  _     -> throwTypeErr _
 
 withKindCheck :: Infer (Type Qual, a) -> Infer (Type Qual, a)
 withKindCheck m = do
@@ -291,13 +307,13 @@ unify :: Type Qual -> Type Qual -> Infer ()
 unify t0 t1 = do
   s  <- getSub
   case mgu (applySub s t0) (applySub s t1) of
-    Left e   -> throwErr e
+    Left e   -> throwTypeErr e
     Right s' -> extendSub s'
 
 extendSub :: Substitution -> Infer ()
 extendSub s' = Infer $ \ _ _ _ s u -> pure ((), s <> s', u)
 
-mgu :: Type Qual -> Type Qual -> Either CompileError Substitution
+mgu :: Type Qual -> Type Qual -> Either TypeError Substitution
 mgu = curry $ \case
   (TName x, TName y) -> if x == y
                         then Right mempty
@@ -321,10 +337,10 @@ infer' :: LQntExpr 'Renamed -> Infer (Type Qual, LQntExpr 'Typechecked)
 infer' (L loc e) = infer e <&> \(t,e') -> (t, L loc e')
 
 infer :: QntExpr 'Renamed -> Infer (Type Qual, QntExpr 'Typechecked)
-infer = withKindCheck . \case
+infer expr = withErrorExpr expr $ withKindCheck $ case expr of
   QntVar n ->
     lookupType n >>= \case
-      Nothing -> throwErr _
+      Nothing -> throwTypeErr _
       Just s  -> instantiate s <&> \t -> (t, QntVar n)
 
   QntNatLit x ->
@@ -422,7 +438,7 @@ inferBinds bs = do
           Scheme _ ty' = s'
       if s' `isInstanceOf` inferred'
       then pure $ QntExpl (TcBinder n ty') e' (L loc s')
-      else throwErr _
+      else throwTypeErr _
 
   pure (fullEnv, explBinds' <> implBinds')
 
