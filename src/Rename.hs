@@ -112,10 +112,13 @@ renameType = \case
   TApp t0 t1 -> TApp <$> renameType t0 <*> renameType t1
 
 findQualified :: Text -> Rename (Maybe Module)
-findQualified x = pure $ Just $ Module ["Foo", "Bar"] -- XXX TODO
+findQualified "-" = pure $ Just $ Module ["Data", "Nat"]
+findQualified _ = pure Nothing
 
 findQualifiedType :: Text -> Rename (Maybe Module)
-findQualifiedType x = pure $ Just $ Module ["Foo", "Bar"] -- XXX TODO
+findQualifiedType "->" = pure $ Just $ Module []
+findQualifiedType "Nat" = pure $ Just $ Module ["Data", "Nat"]
+findQualifiedType _ = pure Nothing
 
 findConstr :: Text -> Rename (Maybe Module)
-findConstr x = pure $ Just $ Module ["Baz", "Faz"] -- XXX TODO
+findConstr x = pure $ Nothing

@@ -28,10 +28,10 @@ wrapTypeError f m = Infer $ \ te ke ce s u ->
     TypeErr tErr -> throwErr $ TypeErr (f tErr)
     err          -> throwErr err
 
-withErrorExpr :: QntExpr 'Renamed -> Infer a -> Infer a
+withErrorExpr :: LQntExpr 'Renamed -> Infer a -> Infer a
 withErrorExpr e = wrapTypeError $ TeInExpr e
 
-withErrorScheme :: Scheme RName -> Infer a -> Infer a
+withErrorScheme :: LScheme Qual -> Infer a -> Infer a
 withErrorScheme e = wrapTypeError $ TeInScheme e
 
 throwTypeErr :: TypeError -> Infer a
@@ -167,7 +167,7 @@ getKind = \case
 checkKind :: Type Qual -> Infer ()
 checkKind t = getKind t >>= \case
   KStar -> pure ()
-  _     -> throwTypeErr _
+  _     -> throwTypeErr TeKindNotStar
 
 withKindCheck :: Infer (Type Qual, a) -> Infer (Type Qual, a)
 withKindCheck m = do
@@ -199,7 +199,7 @@ instance Substitute (Type Qual) where
     TApp t0 t1 -> TApp (applySub s t0) (applySub s t1)
 
 instance Substitute (Scheme Qual) where
-  applySub s (Scheme fs t) = Scheme fs (applySub s t)
+  applySub s (Scheme fs t) = Scheme fs (applySub s t) -- XXX is this wrong? is this instance even used?
 
 instance Substitute TcBinder where
   applySub s (TcBinder n t) = TcBinder n (applySub s t)
@@ -311,33 +311,33 @@ unify t0 t1 = do
     Right s' -> extendSub s'
 
 extendSub :: Substitution -> Infer ()
-extendSub s' = Infer $ \ _ _ _ s u -> pure ((), s <> s', u)
+extendSub s' = Infer $ \ _ _ _ s u -> pure ((), s' <> s, u)
 
 mgu :: Type Qual -> Type Qual -> Either TypeError Substitution
 mgu = curry $ \case
   (TName x, TName y) -> if x == y
                         then Right mempty
-                        else Left _
+                        else Left $ TeTypeMismatch (TName x) (TName y)
 
   (TVar x, TVar y) -> if x == y
                       then Right mempty
                       else Right $ Substitution $ M.singleton x (TVar y)
 
   (TVar v, t) -> if t `containsVar` v
-                 then Left _
+                 then Left $ TeInfiniteType (TVar v) t
                  else Right $ Substitution $ M.singleton v t
 
   (t, TVar v) -> mgu (TVar v) t
 
   (TApp t0 t1, TApp t2 t3) -> liftA2 (<>) (mgu t0 t2) (mgu t1 t3)
 
-  _ -> Left _
+  (t0, t1) -> Left $ TeTypeMismatch t0 t1
 
 infer' :: LQntExpr 'Renamed -> Infer (Type Qual, LQntExpr 'Typechecked)
-infer' (L loc e) = infer e <&> \(t,e') -> (t, L loc e')
+infer' el@(L loc e) = withErrorExpr el (infer e) <&> \(t,e') -> (t, L loc e')
 
 infer :: QntExpr 'Renamed -> Infer (Type Qual, QntExpr 'Typechecked)
-infer expr = withErrorExpr expr $ withKindCheck $ case expr of
+infer = withKindCheck . \case
   QntVar n ->
     lookupType n >>= \case
       Nothing -> throwTypeErr _
@@ -438,7 +438,7 @@ inferBinds bs = do
           Scheme _ ty' = s'
       if s' `isInstanceOf` inferred'
       then pure $ QntExpl (TcBinder n ty') e' (L loc s')
-      else throwTypeErr _
+      else throwTypeErr $ TeSchemeMismatch s' inferred'
 
   pure (fullEnv, explBinds' <> implBinds')
 

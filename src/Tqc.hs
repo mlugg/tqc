@@ -8,15 +8,18 @@ import Control.Monad
 import QntSyn
 
 data TypeError
-  = TeInExpr (QntExpr 'Renamed) TypeError
-  | TeInScheme (Scheme RName) TypeError
+  = TeInExpr (LQntExpr 'Renamed) TypeError
+  | TeInScheme (LScheme Qual) TypeError
+  | TeSchemeMismatch (Scheme Qual) (Scheme Qual)
+  | TeTypeMismatch (Type Qual) (Type Qual)
+  | TeInfiniteType (Type Qual) (Type Qual)
+  | TeKindNotStar
 
 data CompileError
   = NumRangeErr
   | TypeErr TypeError
 
 data CompileWarning
-  = Warn_TMP
 
 data TqcConfig = TqcConfig {}
 

@@ -108,7 +108,9 @@ data Type id
 
 data TyVar = TvName Text
            | TvUnif Integer
-           deriving (Ord, Eq)
+           deriving (Ord, Eq, Show)
+
+infixr 5 `tArrow`
 
 tArrow :: Type Qual -> Type Qual -> Type Qual
 tArrow t0 t1 = (TApp (TName (Qual (Module []) "->")) t0) `TApp` t1
