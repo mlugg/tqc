@@ -9,7 +9,7 @@
 
 module QntSyn where
 
-import Tqc
+import Common
 import Data.Text (Text)
 import qualified Data.Text as T
 import Numeric.Natural
@@ -24,6 +24,12 @@ type family Id p where
   Id 'Parsed = Text
   Id 'Renamed = RName
   Id 'Typechecked = RName
+
+-- Similar to Id, but for type names.
+type family TyId p where
+  TyId 'Parsed = Text
+  TyId 'Renamed = Qual
+  TyId 'Typechecked = Qual
 
 -- A constructor reference for the given pass; used in QntConstrPat. The
 -- renamer resolves the constructors and qualifies them with the module
@@ -40,12 +46,12 @@ type family Binder p where
   Binder 'Renamed = Text
   Binder 'Typechecked = TcBinder
 
-data TcBinder = TcBinder Text Type
+data TcBinder = TcBinder Text (Type Qual)
 
 -- Aliases for located forms of various syntactic constructs
 type LQntExpr p = Located (QntExpr p)
 type LQntAlt p = Located (QntAlt p)
-type LScheme = Located Scheme
+type LScheme id = Located (Scheme id)
 
 -- Expressions {{{
 
@@ -59,7 +65,7 @@ data QntExpr p
 
 data QntBind p
   = QntImpl (Binder p) (LQntExpr p)
-  | QntExpl (Binder p) (LQntExpr p) LScheme
+  | QntExpl (Binder p) (LQntExpr p) (LScheme (TyId p))
 
 data QntPat p
   = QntNamePat (Binder p)
@@ -68,40 +74,48 @@ data QntPat p
 
 data QntAlt p = QntAlt (QntPat p) (LQntExpr p)
 
-bindingName :: forall p. (IsPass p) => QntBind p -> Text
-bindingName = \case
+bindName :: forall p. (IsPass p) => QntBind p -> Text
+bindName = \case
   QntImpl n _   -> psBinderName pr n
   QntExpl n _ _ -> psBinderName pr n
   where pr :: Proxy p
         pr = Proxy
 
+bindExpr :: QntBind p -> LQntExpr p
+bindExpr = \case
+  QntImpl _ e   -> e
+  QntExpl _ e _ -> e
+
 -- }}}
 
 -- Datatype declarations {{{
 
-data DataDecl = DataDecl Text [TyParam] [DataConstr]
+data DataDecl p = DataDecl Text [TyParam] [DataConstr p]
 
 data TyParam = TyParam Text Kind
 
-data DataConstr = DataConstr Text [Type]
+data DataConstr p = DataConstr Text [Type (TyId p)]
 
 -- }}}
 
 -- Types {{{
 
-data Type
-  = TName Text
-  | TVar Text
-  | TUnif TyUnif
-  | TApp Type Type
+data Type id
+  = TName id
+  | TVar TyVar
+  | TApp (Type id) (Type id)
+  deriving (Eq)
 
-newtype TyUnif = TyUnif Integer
-  deriving (Ord, Eq)
+data TyVar = TvName Text
+           | TvUnif Integer
+           deriving (Ord, Eq, Show)
 
-tArrow :: Type -> Type -> Type
-tArrow t0 t1 = (TApp (TName "->") t0) `TApp` t1
+infixr 5 `tArrow`
 
-data Scheme = Scheme (Set Text) Type
+tArrow :: Type Qual -> Type Qual -> Type Qual
+tArrow t0 t1 = (TApp (TName (Qual (Module []) "->")) t0) `TApp` t1
+
+data Scheme id = Scheme (Set Text) (Type id)
 
 -- }}}
 
@@ -110,11 +124,12 @@ data Scheme = Scheme (Set Text) Type
 data Kind
   = KStar
   | KArrow Kind Kind
+  deriving (Eq)
 
 -- }}}
 
 data QntProg p
-  = QntProg [DataDecl] [QntBind p]
+  = QntProg [DataDecl p] [QntBind p]
 
 -- IsPass {{{
 
@@ -125,15 +140,24 @@ data QntProg p
 -- be prefixed 'ps' for 'pass'.
 class IsPass p where
   psPrintId    :: Proxy p -> Id p     -> Text
+  psPrintTyId  :: Proxy p -> TyId p   -> Text
   psBinderName :: Proxy p -> Binder p -> Text
-  psBinderType :: Proxy p -> Binder p -> Maybe Type
+  psBinderType :: Proxy p -> Binder p -> Maybe (Type (TyId p))
   psConstrName :: Proxy p -> Constr p -> Text
+
+  psDetectFunTy :: Proxy p -> Type (TyId p) -> Maybe (Type (TyId p), Type (TyId p))
 
 instance IsPass 'Parsed where
   psPrintId    _ x = x
+  psPrintTyId  _ x = x
   psBinderName _ x = x
   psBinderType _ _ = Nothing
   psConstrName _ x = x
+
+  psDetectFunTy _ = \case
+    TApp (TApp (TName "->") t0) t1 -> Just (t0,t1)
+    _ -> Nothing
+  
 
 instance IsPass 'Renamed where
   psPrintId _ = \case
@@ -141,16 +165,27 @@ instance IsPass 'Renamed where
     LoclName (SrcName x) -> x
     LoclName (GenName x) -> "%" <> x
 
+  psPrintTyId _ (Qual (Module ms) x) = T.intercalate "." ms <> "." <> x
+
   psBinderName _ x = x
   psBinderType _ _ = Nothing
 
   psConstrName _ (Qual (Module ms) x) = T.intercalate "." ms <> "." <> x
 
+  psDetectFunTy _ = \case
+    TApp (TApp (TName (Qual (Module []) "->")) t0) t1 -> Just (t0,t1)
+    _ -> Nothing
+
 instance IsPass 'Typechecked where
   psPrintId _ = psPrintId (Proxy :: Proxy 'Renamed)
+  psPrintTyId _ = psPrintTyId (Proxy :: Proxy 'Renamed)
   psBinderName _ (TcBinder x _) = x
   psBinderType _ (TcBinder _ t) = Just t
   psConstrName _ = psConstrName (Proxy :: Proxy 'Renamed)
+
+  psDetectFunTy _ = \case
+    TApp (TApp (TName (Qual (Module []) "->")) t0) t1 -> Just (t0,t1)
+    _ -> Nothing
 
 -- }}}
 

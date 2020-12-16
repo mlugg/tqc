@@ -1,4 +1,4 @@
-{-# LANGUAGE Safe, LambdaCase, ScopedTypeVariables, OverloadedStrings #-}
+{-# LANGUAGE Safe, LambdaCase, ScopedTypeVariables, OverloadedStrings, ViewPatterns #-}
 
 module QntSyn.Pretty where
 
@@ -9,28 +9,31 @@ import Data.Proxy
 import qualified Data.Text as T
 import qualified Data.Set as S
 
-pPrintScheme :: Scheme -> Text
-pPrintScheme (Scheme univs t) =
+pPrintScheme :: (IsPass p) => Proxy p -> Scheme (TyId p) -> Text
+pPrintScheme pr (Scheme univs t) =
   if null univs
-  then pPrintType t
-  else "∀" <> T.intercalate " " (S.elems univs) <> " . " <> pPrintType t
+  then pPrintType pr t
+  else "∀" <> T.intercalate " " (S.elems univs) <> " . " <> pPrintType pr t
 
-pPrintType :: Type -> Text
-pPrintType = \case
-  TApp (TApp (TName "->") x) y -> "(" <> pPrintType x <> " -> " <> pPrintType y <> ")"
+pPrintType :: forall p. (IsPass p) => Proxy p -> Type (TyId p) -> Text
+pPrintType pr = \case
+  (psDetectFunTy pr -> Just (t0, t1)) -> "(" <> pPrintType pr t0 <> " -> " <> pPrintType pr t1 <> ")"
 
-  TName x ->
-    if isSymbolic x
-    then "(" <> x <> ")"
-    else x
+  TName n ->
+    let n' = psPrintTyId pr n
+    in if isSymbolic n'
+       then "(" <> n' <> ")"
+       else n'
 
-  TVar x -> x
+  TVar (TvName x) -> x
 
-  TUnif (TyUnif x) -> "α" <> T.pack (show x)
+  TVar (TvUnif x) -> "α" <> T.pack (show x)
 
-  TApp x y -> "(" <> pPrintType x <> " " <> pPrintType y <> ")"
+  TApp x y -> "(" <> pPrintType pr x <> " " <> pPrintType pr y <> ")"
 
   where isSymbolic = not . isAlpha . T.head
+        pr :: Proxy p
+        pr = Proxy
 
 pPrintPat :: forall p. (IsPass p) => QntPat p -> Text
 pPrintPat = \case
@@ -103,7 +106,7 @@ pPrintBind = \case
   QntExpl x (L _ e) (L _ t) -> mconcat
     [ pPrintBinder pr x
     , " :: "
-    , pPrintScheme t
+    , pPrintScheme pr t
     , "; "
     , pPrintBinder pr x
     , " = "
@@ -119,6 +122,6 @@ pPrintBinder pr b = case psBinderType pr b of
     [ "("
     , psBinderName pr b
     , " :: "
-    , pPrintType t
+    , pPrintType pr t
     , ")"
     ]

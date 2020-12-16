@@ -2,6 +2,7 @@
 
 module NclToPhtn where
 
+import Common
 import Data.Functor
 import PhtnSyn
 import qualified Data.Text as T

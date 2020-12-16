@@ -1,6 +1,6 @@
 {-# LANGUAGE Safe, LambdaCase, DataKinds, DeriveFunctor, OverloadedStrings #-}
 
-module QntSyn.Rename where
+module Rename where
 
 import Tqc
 import QntSyn
@@ -9,6 +9,7 @@ import Data.Set (Set)
 import qualified Data.Set as S
 import Control.Monad
 import Data.Traversable
+import Common
 
 newtype Rename a = Rename { runRename :: Set Text -> Tqc a }
   deriving (Functor)
@@ -45,12 +46,12 @@ renameExpr = \case
       Just m  -> pure $ QntVar (QualName (Qual m n))
 
   QntLet bs body ->
-    let names = S.fromList $ bindingName <$> bs
+    let names = S.fromList $ bindName <$> bs
     in withLocals names $ do
       bs' <- for bs $ \b ->
         case b of
           QntImpl n e   -> QntImpl n <$> renameLExpr e
-          QntExpl n e t -> QntExpl n <$> renameLExpr e <*> pure t
+          QntExpl n e s -> QntExpl n <$> renameLExpr e <*> renameLScheme s
 
       body' <- renameLExpr body
 
@@ -96,8 +97,28 @@ renamePat = \case
 renameLAlt :: LQntAlt 'Parsed -> Rename (LQntAlt 'Renamed)
 renameLAlt = traverse renameAlt
 
+renameScheme :: Scheme Text -> Rename (Scheme Qual)
+renameScheme (Scheme vs t) = Scheme vs <$> renameType t
+
+renameLScheme :: LScheme Text -> Rename (LScheme Qual)
+renameLScheme = traverse renameScheme
+
+renameType :: Type Text -> Rename (Type Qual)
+renameType = \case
+  TName n -> findQualifiedType n >>= \case
+               Nothing -> throwErr _
+               Just m  -> pure $ TName (Qual m n)
+  TVar v     -> pure $ TVar v
+  TApp t0 t1 -> TApp <$> renameType t0 <*> renameType t1
+
 findQualified :: Text -> Rename (Maybe Module)
-findQualified x = pure $ Just $ Module ["Foo", "Bar"] -- XXX TODO
+findQualified "-" = pure $ Just $ Module ["Data", "Nat"]
+findQualified _ = pure Nothing
+
+findQualifiedType :: Text -> Rename (Maybe Module)
+findQualifiedType "->" = pure $ Just $ Module []
+findQualifiedType "Nat" = pure $ Just $ Module ["Data", "Nat"]
+findQualifiedType _ = pure Nothing
 
 findConstr :: Text -> Rename (Maybe Module)
-findConstr x = pure $ Just $ Module ["Baz", "Faz"] -- XXX TODO
+findConstr x = pure $ Nothing

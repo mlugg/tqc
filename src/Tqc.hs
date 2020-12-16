@@ -1,18 +1,25 @@
-{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveFunctor, DataKinds #-}
 
 module Tqc where
 
+import Common
 import Data.Sequence
 import Control.Monad
-import Data.Text (Text)
+import QntSyn
+
+data TypeError
+  = TeInExpr (LQntExpr 'Renamed) TypeError
+  | TeInScheme (LScheme Qual) TypeError
+  | TeSchemeMismatch (Scheme Qual) (Scheme Qual)
+  | TeTypeMismatch (Type Qual) (Type Qual)
+  | TeInfiniteType (Type Qual) (Type Qual)
+  | TeKindNotStar
 
 data CompileError
   = NumRangeErr
-  deriving (Show)
+  | TypeErr TypeError
 
 data CompileWarning
-  = Warn_TMP
-  deriving (Show)
 
 data TqcConfig = TqcConfig {}
 
@@ -47,22 +54,7 @@ instance TqcMonad Tqc where
   logWarn w = Tqc $ \_ -> Right ((), pure w)
   lift = id
 
-data TqcPass
-  = Parsed
-  | Renamed
-  | Typechecked
-  deriving (Show, Eq)
-
-newtype Module = Module [Text]
-  deriving (Show, Eq)
-
-data Qual = Qual Module Text
-
-data RName
-  = QualName Qual
-  | LoclName LName
-
-data LName
-  = SrcName Text
-  | GenName Text
-  deriving (Ord, Eq)
+tqcCatchErr :: Tqc a -> (CompileError -> Tqc a) -> Tqc a
+tqcCatchErr m f = Tqc $ \conf -> case runTqc m conf of
+  Left err -> runTqc (f err) conf
+  Right x  -> Right x

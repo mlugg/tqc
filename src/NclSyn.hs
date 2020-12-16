@@ -4,7 +4,7 @@ module NclSyn where
 
 import Data.Text (Text)
 import Numeric.Natural
-import Tqc
+import Common
 
 {-
  - There are three main differences between QntSyn and NclSyn.
