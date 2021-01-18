@@ -72,11 +72,12 @@ genSingle = \case
     let (objType, bodyLen) = case info of
           AllocFun closLen _ -> (L "OBJ_TYPE_FUN", closLen + 1) -- one extra for entry code
           AllocData closLen -> (L "OBJ_TYPE_DATA", closLen + 1) -- one extra for constructor id
-          AllocThunk -> (L "OBJ_TYPE_THUNK", 2)
-          AllocInd -> (L "OBJ_TYPE_IND", 1)
+          AllocThunk0 closLen _ -> (L "OBJ_TYPE_THUNK_0", closLen + 1) -- one extra for entry code
+          AllocThunk1 -> (L "OBJ_TYPE_THUNK_1", 2)
 
         extra = case info of
           AllocFun _ entry -> [ Mov8 (IndexObj DI (OBody 0)) (L entry) ]
+          AllocThunk0 _ entry -> [ Mov8 (IndexObj DI (OBody 0)) (L entry) ]
           _ -> []
     in pure $ Seq.fromList $
         [ Mov8 (R R8) objType
@@ -163,8 +164,8 @@ genFunc (PhtnFunc name src) = do
           , Mov8 (R BP) (R SP)
           , Push (R AX)
           , Push (R BX)
-          , Mov8 (R AX) (R R8)
-          , Mov8 (R BX) (R R9)
+          , Mov8 (R AX) (R R9)
+          , Mov8 (R BX) (R R8)
           ]
         ftr = Seq.fromList
           [ Pop (R DI)

@@ -27,23 +27,26 @@
 
 ; When adding an object type, make sure to add an entry to the
 ; eval_table in runtime.asm!
-%define OBJ_TYPE_FUN 0
-%define OBJ_TYPE_DATA 1
-%define OBJ_TYPE_THUNK 2
-%define OBJ_TYPE_IND 3
-%define OBJ_TYPE_GLOBL 4 ; global unevaluated objects
-%define OBJ_TYPE_GLOBL_IND 5 ; distinct from OBJ_TYPE_IND for GC reasons
+
+%define FLAG_STATIC 1
+
+%define OBJ_TYPE_FUN 0      ; Function
+%define OBJ_TYPE_DATA 1     ; Data constructor
+%define OBJ_TYPE_THUNK_0 2  ; Nullary thunk
+%define OBJ_TYPE_THUNK_1 3  ; Single-argument thunk
+%define OBJ_TYPE_IND 4      ; Indirection
 
 ; Trivial macro for evaluating the value in r8. Clobbers all scratch
 ; registers.
 %macro eval 0
-  mov r9d, dword [r8 + obj.type]
-  call qword [eval_table + r9d*8]
+  movzx r9, word [r8 + obj.type]
+  call qword [eval_table + r9*8]
 %endmacro
 
 ; NASM structure defining objects
 struc obj
-  .type: resd 1
+  .flags: resw 1
+  .type: resw 1
   .size: resd 1
   .hdr_size:
   .body:

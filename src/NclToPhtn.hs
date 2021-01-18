@@ -10,6 +10,7 @@ import Numeric.Natural
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Foldable
+import Data.Traversable
 import Data.Sequence hiding (zip, length)
 import Data.Word
 import NclSyn
@@ -18,7 +19,7 @@ import Control.Monad
 import Data.List (genericLength)
 
 data CompileEnv = CompileEnv
-  { envArg   :: NclBinder
+  { envArg   :: Maybe NclBinder
   , envFrees :: Map NclBinder Word64
   , envStack :: Map NclBinder Word64
   , envStackOff :: Word64
@@ -77,7 +78,7 @@ lookupVar = \case
 lookupLocal :: NclBinder -> Compile ()
 lookupLocal x = do
     e <- ask
-    if | x == envArg e -> tellSrc $ pure PPushArg
+    if | Just x == envArg e -> tellSrc $ pure PPushArg
        | Just i <- M.lookup x (envStack e) -> tellSrc $ pure $ PPushStack (BottomOff i)
        | Just i <- M.lookup x (envFrees e) -> tellSrc $ pure $ PPushClos i
        | otherwise -> throwErr _
@@ -105,7 +106,7 @@ compile = \case
            <| mempty
 
   NclApp e0 e1 -> do
-    tellSrc $ pure $ PAllocate AllocThunk
+    tellSrc $ pure $ PAllocate AllocThunk1
     withStackOff 1 $ compile e0
     withStackOff 2 $ compile e1
     tellSrc $ PObjSetPtr (TopOff 2) 0 (TopOff 1) -- fn
@@ -118,7 +119,7 @@ compile = \case
 
     let frees' = zip frees [0..]
         nfrees = fromIntegral $ length frees'
-        fnEnv = CompileEnv arg (M.fromList frees') M.empty 0
+        fnEnv = CompileEnv (Just arg) (M.fromList frees') M.empty 0
 
     cbody <- flushSrc' $ withEnv (const fnEnv) $ compile body
     tellFun $ PhtnFunc fnName cbody
@@ -132,36 +133,44 @@ compile = \case
              <| mempty
 
   NclLet bs body -> do
-    -- Allocate an indirection for each binding
-    tellSrc $ fromList $ PAllocate AllocInd <$ bs
+    -- We can't immediately fill the closures, as bindings may be mutually
+    -- recursive. Instead, we construct the thunks, then iterate over
+    -- all their closures and fill them correctly
+
+    closures <- for bs $ \(NclBind _ frees bindBody) -> do
+      fnName <- mappend "nfn_" . T.pack . show <$> freshId
+
+      let frees' = zip frees [0..]
+          nfrees = fromIntegral $ length frees
+          fnEnv = CompileEnv Nothing (M.fromList frees') M.empty 0
+
+      cbody <- flushSrc' $ withEnv (const fnEnv) $ compile bindBody
+
+      tellFun $ PhtnFunc fnName cbody
+      tellSrc $ pure $ PAllocate (AllocThunk0 nfrees fnName)
+
+      pure frees'
+
+    let nbinds = fromIntegral $ length bs
+      
+    let closures' = zip [nbinds, nbinds-1 ..] closures
 
     sOff <- asks envStackOff
 
-    let bindName (NclBind n _) = n
-        names = bindName <$> bs
+    let names = nclBinder <$> bs
         stackNew = M.fromList $ zip names [sOff..]
-        nbinds = fromIntegral $ M.size stackNew
 
     withStack stackNew $ do
-      for_ bs $ \(NclBind name expr) -> do
-        -- Compile the definition
-        compile expr
-
-        -- Stack now contains ptr to real value; we need to update the
-        -- indirection
-
-        -- Find location of indirection on stack
-        let indLoc = stackNew M.! name
-
-        -- Set ptr in indirection, and pop the compiled val off the
-        -- stack
-        tellSrc $ PObjSetPtr (BottomOff indLoc) 0 (TopOff 0)
-               <| PPop 1
-               <| mempty
+      for_ closures' $ \(off, frees) ->
+        for_ frees $ \(name, idx) -> do
+          lookupLocal name
+          tellSrc $ PObjSetPtr (TopOff off) (idx + 1) (TopOff 0)
+								 <| PPop 1
+								 <| mempty
 
       compile body
 
-    tellSrc $ PReplaceStack (BottomOff sOff) (TopOff 0) -- move the resulting value down to where our return value needs to be
+    tellSrc $ PReplaceStack (BottomOff sOff) (TopOff 0) -- Move the resulting value down to where our return value needs to be
            <| PPop nbinds -- Pop the original return value plus (n-1) binds (the last one remains, it's been replaced with the ret val)
            <| mempty
 

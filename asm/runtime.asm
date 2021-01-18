@@ -4,29 +4,22 @@ section .data
 
 global eval_table
 eval_table:
-  dq eval_fun    ; OBJ_TYPE_FUN
-  dq eval_data   ; OBJ_TYPE_DATA
-  dq eval_thunk  ; OBJ_TYPE_THUNK
-  dq eval_ind    ; OBJ_TYPE_IND
-  dq eval_globl  ; OBJ_TYPE_GLOBL
-  dq eval_ind    ; OBJ_TYPE_GLOBL_IND
+  dq eval_noop    ; OBJ_TYPE_FUN
+  dq eval_noop    ; OBJ_TYPE_DATA
+  dq eval_thunk_0 ; OBJ_TYPE_THUNK_0
+  dq eval_thunk_1 ; OBJ_TYPE_THUNK_1
+  dq eval_ind     ; OBJ_TYPE_IND
 
 section .text
 
-; Evaluation code for indirections
-eval_ind:
-  ; Get the object being pointed to
-  mov r9, qword [r8 + obj.body + 0]
-  mov r8, r9
+; Evalulation code for data constructors and functions
+eval_noop:
+  ; Already evaluated; nothing to do
+  mov rdi, r8
+  ret
 
-  ; Enter the pointed-to object. Note tail-call optimisation; only thing
-  ; on stack is return addr, so no need to call and then return, we can
-  ; just jump straight to eval
-  mov r9d, dword [r8 + obj.type]
-  jmp qword [eval_table + r9d*8]
-
-; Evaluation code for globals
-eval_globl:
+; Evaluation code for nullary thunks
+eval_thunk_0:
   push rbp
   mov rbp, rsp
 
@@ -34,16 +27,16 @@ eval_globl:
   call qword [r8 + obj.body + 0]
   pop r8
 
-  ; rdi contains resulting object
-  ; Replace global with an indirection
-  mov dword [r8 + obj.type], OBJ_TYPE_GLOBL_IND
+  ; rdi contains the resulting object
+  ; Replace thunk with an indirection
+  mov word [r8 + obj.type], OBJ_TYPE_IND
   mov qword [r8 + obj.body + 0], rdi
 
   pop rbp
   ret
 
-; Evaluation code for thunks
-eval_thunk:
+; Evaluation code for single-arg thunks
+eval_thunk_1:
   push rbp
   mov rbp, rsp
 
@@ -58,15 +51,14 @@ eval_thunk:
 
   ; rdi now contains the "real" function pointer
 
-  ; r8 = arg object
+  ; r9 = arg object
   mov r9, qword [r10 + obj.body + 8]
-  mov r8, r9
 
   push r10 ; Push thunk ptr
-    ; Function pointer needs to be second argument
-    mov r9, rdi
+    ; Function pointer needs to be first argument
+    mov r8, rdi
     ; Call function entry code
-    call qword [r9 + obj.body + 0]
+    call qword [r8 + obj.body + 0]
     ; rdi now contains return val
     ; First, eval it in case the function returned another thunk
     mov r8, rdi
@@ -75,7 +67,7 @@ eval_thunk:
   pop r8 ; Pop thunk ptr
 
   ; Replace the thunk with an indirection
-  mov dword [r8 + obj.type], OBJ_TYPE_IND
+  mov word [r8 + obj.type], OBJ_TYPE_IND
   mov qword [r8 + obj.body + 0], rdi
 
   ; Final object ptr already in rdi
@@ -83,12 +75,17 @@ eval_thunk:
   pop rbp
   ret
 
-; Evalulation code for data constructors and functions
-eval_data:
-eval_fun:
-  ; Already evaluated; nothing to do
-  mov rdi, r8
-  ret
+; Evaluation code for indirections
+eval_ind:
+  ; Get the object being pointed to
+  mov r9, qword [r8 + obj.body + 0]
+  mov r8, r9
+
+  ; Enter the pointed-to object. Note tail-call optimisation; only thing
+  ; on stack is return addr, so no need to call and then return, we can
+  ; just jump straight to eval
+  movzx r9, word [r8 + obj.type]
+  jmp qword [eval_table + r9*8]
 
 extern asmalloc
 
@@ -120,7 +117,7 @@ alloc:
 
   mov rdi, rax
 
-  mov dword [rdi + obj.type], r8d
+  mov word [rdi + obj.type], r8w
   mov dword [rdi + obj.size], r9d
 
   pop rdx

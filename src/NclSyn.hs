@@ -42,10 +42,10 @@ data NclExpr
   | NclLet [NclBind] NclExpr
   | NclCase RName [NclAlt] NclExpr -- ECase scrutinee alts def
 
-data NclBind = NclBind NclBinder NclExpr
+data NclBind = NclBind NclBinder [NclBinder] NclExpr
 
 nclBinder :: NclBind -> NclBinder
-nclBinder (NclBind b _) = b
+nclBinder (NclBind b _ _) = b
 
 data NclPat
   = NclConstrPat Qual [NclBinder]

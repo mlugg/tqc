@@ -5,7 +5,8 @@ section .data
 digits: db '0123456789'
 
 intobj:
-  dd OBJ_TYPE_DATA
+  dw 0
+  dw OBJ_TYPE_DATA
   dd 1
   .intval: dq 0
 
@@ -53,12 +54,12 @@ _start:
   mov [intobj.intval], rax
 
   ; and now it's the arg object
-  mov r8, intobj
+  mov r9, intobj
 
   ; init base ptr to zero to indicate first stack frame
   xor rbp, rbp
   ; zero fn object - ensures segfault if referenced
-  xor rbx, rbx
+  xor r8, r8
   ; call code!
   call fn_0
   ; rdi = return val

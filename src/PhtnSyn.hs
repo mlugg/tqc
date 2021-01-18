@@ -30,8 +30,8 @@ data SwitchAlt = SwitchAlt Word64 PhtnSrc
 data AllocInfo
   = AllocFun Word64 Text -- closure len, entry code
   | AllocData Word64 -- closure len
-  | AllocThunk
-  | AllocInd
+  | AllocThunk0 Word64 Text -- closure len, entry code
+  | AllocThunk1
   deriving (Show)
 
 data StackPos

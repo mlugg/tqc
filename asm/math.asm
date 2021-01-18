@@ -16,16 +16,16 @@
   push rbp
   mov rbp, rsp
 
-  push r8
+  push r9
 
   mov r8, OBJ_TYPE_FUN
   mov r9, 2
   call alloc
 
-  pop r8
+  pop r9
 
   mov qword [rdi + obj.body + 0], .fn1
-  mov qword [rdi + obj.body + 8], r8
+  mov qword [rdi + obj.body + 8], r9
 
   pop rbp
   ret
@@ -37,8 +37,8 @@
   push rax
   push rbx
 
-  mov rax, r8
-  mov rbx, r9
+  mov rax, r9
+  mov rbx, r8
 
   ; Alloc constr, push to stack
   mov r8, OBJ_TYPE_DATA
@@ -77,21 +77,24 @@
 
 section .data
 
-global obj_add
-obj_add:
-  dd OBJ_TYPE_GLOBL
+global obj_Data.Nat.add
+obj_Data.Nat.add:
+  dw FLAG_STATIC
+  dw OBJ_TYPE_THUNK_0
   dd 1
   dq mk_add
 
-global obj_sub
-obj_sub:
-  dd OBJ_TYPE_GLOBL
+global obj_Data.Nat.sub
+obj_Data.Nat.sub:
+  dw FLAG_STATIC
+  dw OBJ_TYPE_THUNK_0
   dd 1
   dq mk_sub
 
-global obj_mul
-obj_mul:
-  dd OBJ_TYPE_GLOBL
+global obj_Data.Nat.mul
+obj_Data.Nat.mul:
+  dw FLAG_STATIC
+  dw OBJ_TYPE_THUNK_0
   dd 1
   dq mk_mul
 
