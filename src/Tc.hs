@@ -96,18 +96,25 @@ mapAccumLM f = go where
 
 type TypeEnv = Map RName (Scheme Qual)
 type KindEnv = Map Qual Kind
-type ConstrEnv = Map Qual (Type Qual, [Type Qual])
+type ConstrEnv = Map Qual (Set Text, Type Qual, [Type Qual]) -- type vars, resulting type, arg types
 
 fresh :: Infer TyVar
 fresh = Infer $ \ _ _ _ s u -> pure (TvUnif u, s, (u+1))
 
-lookupConstr :: Qual -> Infer (Type Qual, [Type Qual])
+lookupConstr :: Qual -> Infer (Set Text, Type Qual, [Type Qual])
 lookupConstr c = lookupConstr' c >>= \case
   Just x  -> pure x
   Nothing -> throwTypeErr _
 
-lookupConstr' :: Qual -> Infer (Maybe (Type Qual, [Type Qual]))
+lookupConstr' :: Qual -> Infer (Maybe (Set Text, Type Qual, [Type Qual]))
 lookupConstr' c = Infer $ \ _ _ e s u -> pure (M.lookup c e, s, u)
+
+lookupInstantiateConstr :: Qual -> Infer (Type Qual, [Type Qual])
+lookupInstantiateConstr c = do
+  (vs, t, args) <- lookupConstr c
+  tvs <- replicateM (S.size vs) fresh
+  let m = M.fromList $ zip (TvName <$> S.toList vs) (TVar <$> tvs)
+  pure $ (replaceTyvars m t, replaceTyvars m <$> args)
 
 containsVar :: Type Qual -> TyVar -> Bool
 TVar v     `containsVar` u = v == u
@@ -199,7 +206,7 @@ instance Substitute (Type Qual) where
     TApp t0 t1 -> TApp (applySub s t0) (applySub s t1)
 
 instance Substitute (Scheme Qual) where
-  applySub s (Scheme fs t) = Scheme fs (applySub s t) -- XXX is this wrong? is this instance even used?
+  applySub s (Scheme fs t) = Scheme fs (applySub s t)
 
 instance Substitute TcBinder where
   applySub s (TcBinder n t) = TcBinder n (applySub s t)
@@ -398,7 +405,7 @@ inferPat = \case
     pure (mempty, natType, QntNatLitPat x)
 
   QntConstrPat c ps -> do
-    (tConstr, as) <- lookupConstr c
+    (tConstr, as) <- lookupInstantiateConstr c
 
     (es,ps') <-
       fmap unzip $
