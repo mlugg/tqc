@@ -310,110 +310,228 @@ instantiate (Scheme vs ty) = do
 getSub :: Infer Substitution
 getSub = Infer $ \ _ _ _ s u -> pure (s, s, u)
 
+-- 'unify t0 t1' takes two types and attempts to unify them using 'mgu',
+-- extending the current substitution if sucessful or throwing an error
+-- otherwise.
 unify :: Type Qual -> Type Qual -> Infer ()
 unify t0 t1 = do
-  s  <- getSub
+  s <- getSub
   case mgu (applySub s t0) (applySub s t1) of
     Left e   -> throwTypeErr e
     Right s' -> extendSub s'
 
+-- 'extendSub s' modifies the current substitution by extending it with
+-- 's'.
 extendSub :: Substitution -> Infer ()
 extendSub s' = Infer $ \ _ _ _ s u -> pure ((), s' <> s, u)
 
+-- mgu finds the most general unifier for two types. That is, given a
+-- type t0 and t1, 'mgu t0 t1' returns either a type error or a
+-- substitution which, when applied to t0, will yield t1.
 mgu :: Type Qual -> Type Qual -> Either TypeError Substitution
 mgu = curry $ \case
+  -- Unifying two named, concrete types is trivially only possible if
+  -- those types are the same (we can't unify Nat with Bool for
+  -- instance).
   (TName x, TName y) -> if x == y
                         then Right mempty
                         else Left $ TeTypeMismatch (TName x) (TName y)
 
+  -- Unifying two type variables is done by substituting one for the
+  -- other, unless they are the same, in which case no substitution is
+  -- necessary.
   (TVar x, TVar y) -> if x == y
                       then Right mempty
                       else Right $ Substitution $ M.singleton x (TVar y)
 
+  -- Unifying a tyvar with any other type is also done by a simple
+  -- subtitution. However, we also need to check whether the type on the
+  -- right contains the tyvar itself; if it does, we have an infinite
+  -- type (e.g. 'a ~ List a') so return an error.
   (TVar v, t) -> if t `containsVar` v
                  then Left $ TeInfiniteType (TVar v) t
                  else Right $ Substitution $ M.singleton v t
 
+  -- This is the same as the case above, but the other way around.
   (t, TVar v) -> mgu (TVar v) t
 
+  -- To unify two type applications, we just unify the constructors and
+  -- the arguments together (e.g. `Maybe a ~ Maybe b' is equivalent to
+  -- 'Maybe ~ Maybe' and 'a ~ b').
   (TApp t0 t1, TApp t2 t3) -> liftA2 (<>) (mgu t0 t2) (mgu t1 t3)
 
+  -- Attempts to unify any other types should fail.
   (t0, t1) -> Left $ TeTypeMismatch t0 t1
 
+-- infer' is a variant of infer which acts on Located expressions, and
+-- also wraps returned errors.
 infer' :: LQntExpr 'Renamed -> Infer (Type Qual, LQntExpr 'Typechecked)
 infer' el@(L loc e) = withErrorExpr el (infer e) <&> \(t,e') -> (t, L loc e')
 
+-- infer is the main inference function, which takes a Renamed
+-- expression and returns its type and an equivalent Typechecked
+-- expression.
 infer :: QntExpr 'Renamed -> Infer (Type Qual, QntExpr 'Typechecked)
-infer = withKindCheck . \case
+infer = withKindCheck . \case -- withKindCheck here enforces that every term must have a type of kind *; e.g. no term may have type 'Maybe'
+
+  -- A variable reference is simply resolved by looking up that name in
+  -- the type environment.
   QntVar n ->
     lookupType n >>= \case
       Nothing -> throwTypeErr _
       Just s  -> instantiate s <&> \t -> (t, QntVar n)
 
+  -- The type of a literal is hardcoded (see the natType constant
+  -- earlier in this module).
   QntNatLit x ->
     pure (natType, QntNatLit x)
 
   QntApp ef ea -> do
+    -- Create a new type variable to represent the function's result
+    -- type
     ur <- fresh
     let tr = TVar ur
 
+    -- Infer the type of the function and its argument, also receiving
+    -- modified (Typechecked rather than Renamed) expressions
     (tf, ef') <- infer' ef
     (ta, ea') <- infer' ea
 
+    -- Through unification, enforce that 'tf ~ ta -> tr'
     unify tf (ta `tArrow` tr)
 
+    -- Return the created result type and Typechecked expression
     pure (tr, QntApp ef' ea')
 
   QntLam b e -> do
+    -- Create a type variable to represent the lambda's argument type
     ua <- fresh
     let ta = TVar ua
+
+    -- Extend the type environment with the fact that 'x : ta' for the
+    -- lambda argument 'x', and within this environment, infer the type
+    -- of the body expression
     (te, e') <- withType (LoclName $ SrcName b) (Scheme S.empty ta) $ infer' e
 
+    -- The lambda's type is a function from the argument type 'ta' to
+    -- the body result type 'te'
     pure (ta `tArrow` te, QntLam (TcBinder b ta) e')
 
   QntLet bs e -> do
+    -- Take the set of bindings and infer the type schemes of them all
+    -- using inferBinds
     (env, bs') <- inferBinds bs
+
+    -- Extend the type environment with all the bound names, and infer
+    -- the type of the 'in ...' expression within this new environment
     (te, e') <- withEnv env $ infer' e
+
+    -- Return the type of this body expression and a Typechecked
+    -- expression
     pure (te, QntLet bs' e')
 
   QntCase eScrut as -> do
     (patTypes, exprTypes, as') <-
+      -- unzip3 helps convert our list of tuples to a tuple of lists
       fmap unzip3 $
+      -- For each alternative with source location 'loc', pattern 'p',
+      -- and RHS expression 'e'...
       for as $ \(L loc (QntAlt p e)) -> do
+        -- Infer the type of the pattern. Here, 'env' is the type
+        -- environment introduced by the pattern's bound variables, 'tp'
+        -- is the type of the scrutinee, and 'p'' is the Typechecked
+        -- pattern.
         (env, tp, p') <- inferPat p
+
+        -- Within an environment extended by the pattern's bound
+        -- variables, infer the type of the alternative's RHS.
         (te, e') <- withEnv env $ infer' e
+
+        -- Return the scrutinee type, the RHS type, and the Typechecked
+        -- alternative.
         pure (tp, te, L loc $ QntAlt p' e')
 
+    -- Now:
+    -- - patTypes is a list of every type the scrutinee must match
+    -- - exprTypes is a list of the types of every alternative's RHS
+    -- - as' is the list of Typechecked alternatives
+
+    -- Infer the actual type 'tScrut' of the scrutinee
     (tScrut, eScrut') <- infer' eScrut
+
+    -- Unify each type in 'patTypes' with 'tScrut', ensuring the
+    -- scrutinee type is as expected by each pattern
     traverse_ (unify tScrut) patTypes
 
+    -- Create a type variable to represent the resulting type of the
+    -- expression.
     ue <- fresh
     let te = TVar ue
+
+    -- As this case expression itself must have a concrete type, unify
+    -- each type in 'exprTypes' with the tyvar created above.
     traverse_ (unify te) exprTypes
 
+    -- Return the created type and the Typechecked case statement.
     pure (te, QntCase eScrut' as')
 
-
+-- inferPat infers types around patterns; given a Renamed pattern, it
+-- returns the type environment introduced by binders in the pattern,
+-- the type which the expression being scruntinised must have, and an
+-- equivalent Typechecked pattern.
 inferPat :: QntPat 'Renamed -> Infer (TypeEnv, Type Qual, QntPat 'Typechecked)
 inferPat = \case
+  -- Name patterns introduce a binding into the environment of the bound
+  -- name to a new type. We represent this by creating a fresh type
+  -- variable which represents the bound variable's type, returning it
+  -- in the environment, and also requiring the scruntinised expression
+  -- to have that same type.
   QntNamePat n -> do
     un <- fresh
     let tn = TVar un
     pure (singletonTypeEnv n (Scheme S.empty tn), tn, QntNamePat (TcBinder n tn))
 
+  -- Numeric literal patterns don't introduce any bound variables, but
+  -- they do enforce that the scrutinee is of type 'Nat'.
   QntNatLitPat x ->
     pure (mempty, natType, QntNatLitPat x)
 
   QntConstrPat c ps -> do
+    -- Lookup the given constructor, and instantiate it with new type
+    -- variables to prevent it conflicting with different uses of the
+    -- same constructor. This returns 'tConstr', the type which the
+    -- constructor results in (here, the scrutinee type), and 'as', the
+    -- types of each argument to the constructor.
     (tConstr, as) <- lookupInstantiateConstr c
+
+    -- Sub-patterns and constructor arguments should be in a one-to-one
+    -- correspondence
+    when (length as != length ps) $ TODO
 
     (es,ps') <-
       fmap unzip $
+      -- For every pattern 'p' matching a constructor argument of type
+      -- 'a'...
       for (zip ps as) $ \(p,a) -> do
+        -- Recursively infer the type of the sub-pattern 'p', returning
+        -- the expected type of the argument in 't', the introduced
+        -- environment in 'e', and the Typechecked pattern in 'p''
         (e,t,p') <- inferPat p
+
+        -- unify the expected argument type with its actual type
         unify t a
+
+        -- Return the environment introduced by the sub-pattern, as well
+        -- as the sub-pattern's Typechecked variant.
         pure (e,p')
 
+    -- Now, 'es' is a list of every environment introduced by the
+    -- sub-patterns, as 'ps'' is a list of the Typechecked variants of
+    -- the patterns in 'ps'
+
+    -- Combine all the environments into one with 'fold', give the
+    -- scruntinee the known constructor type, and return the Typechecked
+    -- pattern
     pure (fold es, tConstr, QntConstrPat c ps')
 
 inferBinds :: [QntBind 'Renamed] -> Infer (TypeEnv, [QntBind 'Typechecked])
