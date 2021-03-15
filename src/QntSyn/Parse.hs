@@ -19,6 +19,8 @@ import Control.Monad.Combinators.Expr
 
 import qualified Data.Set as S
 
+import Data.Either
+
 type Parser = Parsec Void Text
 
 located :: Parser a -> Parser (Located a)
@@ -90,9 +92,17 @@ semi :: Parser Text
 semi = symbol ";"
 
 semiTerm :: Parser a -> Parser a
-semiTerm x = x <* semi
+semiTerm p = p <* semi
 
 -- }}}
+
+file :: Parser QntProg
+file = sc *> (mkProg <$> many tl) <* eof
+  where tl = Left  <$> dataDecl
+         <|> Right <$> binding
+        mkProg tls =
+          let (dataDecls, bindings) = partitionEithers tls
+          in QntProg dataDecls bindings
 
 -- Top-level parsers {{{
 

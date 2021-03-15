@@ -15,22 +15,29 @@ import Rename
 import Tc
 import qualified Data.Map as M
 
+{-
+qualNat :: Text -> Qual
+qualNat = Qual (Module ["Data", "Nat"])
+
 tNat :: Type Qual
-tNat = TName $ Qual (Module ["Data", "Nat"]) "Nat"
+tNat = TName $ qualNat "Nat"
 
-initTe :: TypeEnv
-initTe = M.fromList
-  [ (QualName $ Qual (Module ["Data", "Nat"]) "-", Scheme mempty $ tNat `tArrow` tNat `tArrow` tNat)
+preludeTe :: TypeEnv
+preludeTe = M.fromList
+  [ ( QualName $ qualNat "+", Scheme mempety $ tNat `tArrow` tNat `tArrow` tNat)
+  , ( QualName $ qualNat "-", Scheme mempety $ tNat `tArrow` tNat `tArrow` tNat)
+  , ( QualName $ qualNat "*", Scheme mempety $ tNat `tArrow` tNat `tArrow` tNat)
+  , ( QualName $ qualNat "/", Scheme mempety $ tNat `tArrow` tNat `tArrow` tNat)
   ]
 
-initKe :: KindEnv
-initKe = M.fromList
-  [ (Qual (Module ["Data", "Nat"]) "Nat", KStar)
-  , (Qual (Module []) "->", KArrow KStar $ KArrow KStar KStar)
+preludeKe :: KindEnv
+preludeKe = M.fromList
+  [ (qualNat "Nat", KStar)
+  , (Qual (Module []) "->", KStar `KArrow` KStar `KArrow` KStar)
   ]
 
-initCe :: ConstrEnv
-initCe = mempty
+preludeCe :: ConstrEnv
+preludeCe = M.fromList []
 
 showTypeErr :: Text -> TypeError -> Text
 showTypeErr src = \case
@@ -54,13 +61,37 @@ showErr src = \case
 main :: IO ()
 main = do
   src <- TIO.getContents
-  case parse expr "<stdin expr>" src of
+
+  let thisModule = Module ["Main"]
+
+  case parse file "<stdin>" src of
     Left err -> do
       putStrLn "Parse error!"
       putStr $ errorBundlePretty err
-    Right (L _ eP) -> do
+    Right (QntProg dataDecls bindings) -> do
       putStrLn "Parsed!"
       TIO.putStrLn $ pPrintExpr eP
+
+      -- Initial kind environment
+      let dataDeclKinds = dataDecls <&> \ (DataDecl name args _) ->
+            (Qual thisModule name, foldr KArrow KStar (paramKind <$> args))
+            where paramKind (TyParam _ k) = k
+          initKe = preludeKe <> M.fromList dataDeclKinds
+
+      -- Initial constructor environment
+      let dataDeclConstrs = concat $ dataDecls <&> \ (DataDecl dataName tyArgs constrs) ->
+            let params = S.fromList $ args <&> \ (TyParam n _) -> n
+            in constrs <&> \ (DataConstr constrName constrArgs) ->
+              (Qual thisModule constrName, (params, foldl TApp (Qual thisModule dataName) (TVar . TvName <$> params), constrArgs))
+            (Qual thisModule name, (S.fromList $ paramName <$> args, t, )
+          initCe = preludeCe <> M.fromList dataDeclConstrs
+
+      -- Initial type environment
+      let constrTypeEnv = dataDeclConstrs <&> \ (constrName, (tyVars, resultType, argTypes)) ->
+            foldr TArrow resultType argTypes
+          initTe = preludeTe <$> constrTypeEnv
+
+
       case runTqc (runRename (renameExpr eP) mempty) TqcConfig of
         Left err -> do
           putStrLn "Error in renaming expr!"
@@ -82,3 +113,7 @@ main = do
 
               putStrLn "Inferred scheme:"
               TIO.putStrLn $ pPrintScheme (Proxy :: Proxy 'Typechecked) s
+              -}
+
+main :: IO ()
+main = pure ()

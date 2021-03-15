@@ -121,6 +121,8 @@ data Scheme id = Scheme (Set Text) (Type id)
 
 -- Kinds {{{
 
+infixr 5 `KArrow`
+
 data Kind
   = KStar
   | KArrow Kind Kind
@@ -128,8 +130,8 @@ data Kind
 
 -- }}}
 
-data QntProg p
-  = QntProg [DataDecl p] [QntBind p]
+data QntProg
+  = QntProg [DataDecl 'Parsed] [QntBind 'Parsed]
 
 -- IsPass {{{
 

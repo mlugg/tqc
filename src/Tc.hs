@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase, OverloadedStrings, DataKinds, FlexibleInstances, DeriveFunctor, Safe #-}
+{-# LANGUAGE LambdaCase, OverloadedStrings, DataKinds, FlexibleInstances, DeriveFunctor, Safe, MultiWayIf #-}
 
 module Tc where
 
@@ -22,18 +22,25 @@ import Data.Traversable
 import Control.Applicative
 import Control.Monad
 
+-- 'wrapTypeError f m' returns an action which runs 'm', but if it
+-- throws a 'TypeError', mutates that error with 'f' before continuing.
 wrapTypeError :: (TypeError -> TypeError) -> Infer a -> Infer a
 wrapTypeError f m = Infer $ \ te ke ce s u ->
   runInfer m te ke ce s u `tqcCatchErr` \case
     TypeErr tErr -> throwErr $ TypeErr (f tErr)
     err          -> throwErr err
 
+-- 'withErrorExpr e m' wraps any 'TypeError' thrown by 'm', specifying
+-- that it originated in expression 'e'.
 withErrorExpr :: LQntExpr 'Renamed -> Infer a -> Infer a
 withErrorExpr e = wrapTypeError $ TeInExpr e
 
+-- 'withErrorScheme s m' wraps any 'TypeError' thrown by 'm', specifying
+-- that it originated in type scheme 's'.
 withErrorScheme :: LScheme Qual -> Infer a -> Infer a
 withErrorScheme e = wrapTypeError $ TeInScheme e
 
+-- Throw the given type error; a simple wrapper around throwErr
 throwTypeErr :: TypeError -> Infer a
 throwTypeErr = throwErr . TypeErr
 
@@ -45,42 +52,72 @@ s0 `isInstanceOf` s1 = isJust $ s0 `asInstanceOf` s1
 -- Find a tyvar substitution that makes one scheme an instance of
 -- another
 asInstanceOf :: (Eq a) => Scheme a -> Scheme a -> Maybe (Map TyVar (Type a))
-Scheme vsL tL `asInstanceOf` Scheme vsR tR = case (tL,tR) of
-  (t, TVar n) -> do
-    if n `S.member` vsR'
-    then Just $ M.singleton n t -- Quantified in the RHS scheme, so can be anything in the LHS scheme
-    else if n `S.member` vsL'
-         then Nothing -- Var is quantified over in the LHS scheme but not the RHS, so they refer to different things
-         else if t == TVar n
-              then Just mempty -- Not quantified in either scheme and equivalent so refer to same type
-              else Nothing -- Not quantified in either but not equivalent so refer to different types
-  
+Scheme vsL tL `asInstanceOf` Scheme vsR tR =
+  case (tL, tR) of -- Compare the types themselves, ignoring quantified variables
 
-  (TApp t0 t1, TApp t0' t1') -> do
-    soln0 <- Scheme vsL t0 `asInstanceOf` Scheme vsR t0'
-    soln1 <- Scheme vsL t1 `asInstanceOf` Scheme vsR t1'
-    combine soln0 soln1
-
-  (_, TApp _ _) -> Nothing
-
-  (t, TName n) ->
-    if t == TName n
-    then Just mempty
-    else Nothing
-
-  where vsL' = S.map TvName vsL
-        vsR' = S.map TvName vsR
-        combine = mergeA
-          preserveMissing
-          preserveMissing
-          (zipWithAMatched $
-            \ _ t0 t1 -> if t0 == t1
-                         then Just t0
-                         else Nothing)
+    -- To make a type an instance of a tyvar, we have to do some checks
+    -- on the schemes' quantified variables
+    (t, TVar n) -> if
+      | n `S.member` vsR' -> Just $ M.singleton n t -- Quantified in the RHS scheme, so can be anything in the LHS scheme
+      | t == TVar n && n `S.notMember` vsL' -> Just mempty -- Not quantified in either scheme and equivalent so refer to same type. If it was quantified on the LHS, this would be invalid ('forall a. a' does not refer to the same type as 'forall b. a')
+      | otherwise -> Nothing -- Not quantified in either but not equivalent so refer to different types
     
+
+    (TApp t0 t1, TApp t0' t1') -> do
+      -- Recursively apply the function to the constructors and
+      -- arguments of the application, constructing schemes using the
+      -- same sets of quantified variables 'vsL' and 'vsR'
+      soln0 <- Scheme vsL t0 `asInstanceOf` Scheme vsR t0'
+      soln1 <- Scheme vsL t1 `asInstanceOf` Scheme vsR t1'
+
+      -- Combine the two sets of solutions (see helper function defined
+      -- below)
+      combine soln0 soln1
+
+    -- Making any other type an instance of an application is impossible
+    -- (this function is not commutative! We can make 'TApp _ _' an
+    -- instance of 'forall a. a', but not the other way around).
+    (_, TApp _ _) -> Nothing
+
+    -- If the RHS type is a named, concrete type, the only way this can
+    -- be valid is if the LHS is the same type, in which case we yield
+    -- an empty substitution; otherwise, we fail
+    (t, TName n) ->
+      if t == TName n
+      then Just mempty
+      else Nothing
+
+  where -- vsL' and vsR' are slightly modified forms of vsL and vsR
+        -- where each variable is wrapped in a 'TvName' constructor,
+        -- making it a 'TyVar' rather than a 'Text'. Used for some
+        -- comparisons in the first case.
+        vsL' = S.map TvName vsL
+        vsR' = S.map TvName vsR
+
+        -- 'combine' takes two substitutions and merges them. The
+        -- 'Data.Map.Merge.Lazy' module allows us to easily define a
+        -- strategy for merging the two maps.
+        combine = mergeA
+          preserveMissing -- What to do with keys in the first map but not the second - preserve unchanged
+          preserveMissing -- What to do with keys in the second map but not the first - preserve unchanged
+          (zipWithAMatched $ -- What do do we keys in both maps - apply
+                             -- the following function to the elements
+                             -- to create a resulting element, or return
+                             -- 'Nothing' to make map creation fail
+            \ _ t0 t1 -> if t0 == t1   -- If the types are the same in both maps...
+                         then Just t0  -- Then just yield that same type
+                         else Nothing) -- Otherwise, we fail
+
+-- The type of natural numbers (the only primitive numeric type
+-- currently)
 natType :: Type Qual
 natType = TName (Qual (Module ["Data", "Nat"]) "Nat")
 
+-- Helper function - 'mapAccumLM f z xs' applies the monadic function
+-- 'f' to an accumulating state parameter 'z' and to each element of
+-- 'xs' in turn. e.g.:
+-- mapAccumLM (\ x y -> Just (x+1, show y)) 0 [True, False, True]
+--   = Just (3, ["True", "False", "True"])
 mapAccumLM :: (Monad m)
            => (a -> b -> m (a, c))
            -> a
@@ -94,10 +131,22 @@ mapAccumLM f = go where
     (z1, ys) <- go z0 xs
     pure (z1, y:ys)
 
+-- The type environment maps from resolved names (i.e. either local or
+-- global) to type schemes
 type TypeEnv = Map RName (Scheme Qual)
+
+-- The kind environment maps from fully-qualified names (of types) to
+-- those types' kinds
 type KindEnv = Map Qual Kind
+
+-- The constructor environment maps from fully-qualified names (of
+-- constructors, which must be global, unlike e.g. normal functions) to
+-- information about each of those constructors: the tyvars it is
+-- quantified over, the type it constructs (in terms of those tyvars),
+-- and the argument types (again, in terms of those tyvars).
 type ConstrEnv = Map Qual (Set Text, Type Qual, [Type Qual]) -- type vars, resulting type, arg types
 
+-- 'fresh' returns a 
 fresh :: Infer TyVar
 fresh = Infer $ \ _ _ _ s u -> pure (TvUnif u, s, (u+1))
 
@@ -506,7 +555,7 @@ inferPat = \case
 
     -- Sub-patterns and constructor arguments should be in a one-to-one
     -- correspondence
-    when (length as != length ps) $ TODO
+    when (length as /= length ps) $ throwTypeErr _
 
     (es,ps') <-
       fmap unzip $

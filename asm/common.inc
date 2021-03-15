@@ -8,23 +8,23 @@
 ;   Preserved registers must only contain object pointers (or NULL)
 ;   whenever a function is called! This is so that object references can
 ;   be accurately tracked by the GC.
-
+;
 ; For function entry code:
 ;   r8: function argument
 ;   r9: function object when calling functions
 ;   Returns function return value (may be a thunk!)
-
+;
 ; For eval:
 ;   r8: object to eval
 ;   Returns pointer to evaluated object behind any indirections
-
+;
 ; eval takes an object, evaluates to WHNF, and returns the address of
 ; the object behind any indirections
-
-; alloc takes a closure type in r12, a body size (in words) in r13, and
-; returns a pointer to the allocated object in rdx. It automatically
-; fills the allocated object's header.
-
+;
+; alloc takes a closure type and body size (in 64-bit words) as its
+; arguments. It automatically fills the closure type and body length
+; fields in the object header.
+;
 ; When adding an object type, make sure to add an entry to the
 ; eval_table in runtime.asm!
 
