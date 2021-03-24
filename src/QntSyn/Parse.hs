@@ -178,8 +178,7 @@ type_ = makeExprParser typeTerm
 
 typeTerm :: Parser (Type Text)
 typeTerm = parens type_
-  <|> TName <$> identUpperOp
-  <|> TVar . TvName <$> identLower
+  <|> TName <$> identAnyOp
 
 typeScheme :: Parser (LScheme Text)
 typeScheme = located $ polyType <|> (Scheme S.empty <$> type_)

@@ -46,29 +46,40 @@ throwTypeErr = throwErr . TypeErr
 
 -- Check whether one scheme can be an instance of another; i.e. is the
 -- second at least as general as the first
-isInstanceOf :: (Eq a) => Scheme a -> Scheme a -> Bool
+isInstanceOf :: Scheme Qual -> Scheme Qual -> Bool
 s0 `isInstanceOf` s1 = isJust $ s0 `asInstanceOf` s1
 
--- Find a tyvar substitution that makes one scheme an instance of
--- another
-asInstanceOf :: (Eq a) => Scheme a -> Scheme a -> Maybe (Map TyVar (Type a))
-Scheme vsL tL `asInstanceOf` Scheme vsR tR =
+-- Find a substitution that makes one scheme an instance of another
+asInstanceOf :: Scheme Qual -> Scheme Qual -> Maybe (Map Text (Type Qual))
+Scheme qsL tL `asInstanceOf` Scheme qsR tR =
   case (tL, tR) of -- Compare the types themselves, ignoring quantified variables
 
-    -- To make a type an instance of a tyvar, we have to do some checks
-    -- on the schemes' quantified variables
-    (t, TVar n) -> if
-      | n `S.member` vsR' -> Just $ M.singleton n t -- Quantified in the RHS scheme, so can be anything in the LHS scheme
-      | t == TVar n && n `S.notMember` vsL' -> Just mempty -- Not quantified in either scheme and equivalent so refer to same type. If it was quantified on the LHS, this would be invalid ('forall a. a' does not refer to the same type as 'forall b. a')
-      | otherwise -> Nothing -- Not quantified in either but not equivalent so refer to different types
-    
+    -- To make a type an instance of a quantified tyvar, just assign
+    -- that type to that variable
+    (t, TName (Qual (Module []) n)) | n `S.member` qsR -> Just $ M.singleton n t
+
+    -- If the names are equivalent and not quantified in either scheme,
+    -- they refer to the same type. If it were quantified on the LHS,
+    -- this would be invalid ('forall a. a' does not refer to the same
+    -- type as 'forall b. a')
+    (t, TName n) | t == TName n && n `S.notMember` qsL' -> Just mempty
+
+    -- Any other unification with a name on the RHS is invalid
+    (_, TName _) -> Nothing
+
+    -- TVars act like unquantified TNames here; the only valid case, if
+    -- the LHS type is a TVar, is for the types to be equivalent.
+    (t, TVar x) | t == TVar x -> Just mempty
+
+    -- ...hence, this case is invalid.
+    (_, TVar _) -> Nothing
 
     (TApp t0 t1, TApp t0' t1') -> do
       -- Recursively apply the function to the constructors and
       -- arguments of the application, constructing schemes using the
       -- same sets of quantified variables 'vsL' and 'vsR'
-      soln0 <- Scheme vsL t0 `asInstanceOf` Scheme vsR t0'
-      soln1 <- Scheme vsL t1 `asInstanceOf` Scheme vsR t1'
+      soln0 <- Scheme qsL t0 `asInstanceOf` Scheme qsR t0'
+      soln1 <- Scheme qsL t1 `asInstanceOf` Scheme qsR t1'
 
       -- Combine the two sets of solutions (see helper function defined
       -- below)
@@ -79,20 +90,12 @@ Scheme vsL tL `asInstanceOf` Scheme vsR tR =
     -- instance of 'forall a. a', but not the other way around).
     (_, TApp _ _) -> Nothing
 
-    -- If the RHS type is a named, concrete type, the only way this can
-    -- be valid is if the LHS is the same type, in which case we yield
-    -- an empty substitution; otherwise, we fail
-    (t, TName n) ->
-      if t == TName n
-      then Just mempty
-      else Nothing
-
-  where -- vsL' and vsR' are slightly modified forms of vsL and vsR
-        -- where each variable is wrapped in a 'TvName' constructor,
-        -- making it a 'TyVar' rather than a 'Text'. Used for some
+  where -- qsL' and qsR' are slightly modified forms of qsL and qsR
+        -- where each variable is wrapped in a 'Qual' constructor,
+        -- making it a 'Qual' rather than a 'Text'. Used for some
         -- comparisons in the first case.
-        vsL' = S.map TvName vsL
-        vsR' = S.map TvName vsR
+        qsL' = S.map (Qual (Module [])) qsL
+        qsR' = S.map (Qual (Module [])) qsR
 
         -- 'combine' takes two substitutions and merges them. The
         -- 'Data.Map.Merge.Lazy' module allows us to easily define a
@@ -148,7 +151,7 @@ type ConstrEnv = Map Qual (Set Text, Type Qual, [Type Qual]) -- type vars, resul
 
 -- 'fresh' returns a 
 fresh :: Infer TyVar
-fresh = Infer $ \ _ _ _ s u -> pure (TvUnif u, s, (u+1))
+fresh = Infer $ \ _ _ _ s u -> pure (TyVar u, s, (u+1))
 
 lookupConstr :: Qual -> Infer (Set Text, Type Qual, [Type Qual])
 lookupConstr c = lookupConstr' c >>= \case
@@ -162,8 +165,8 @@ lookupInstantiateConstr :: Qual -> Infer (Type Qual, [Type Qual])
 lookupInstantiateConstr c = do
   (vs, t, args) <- lookupConstr c
   tvs <- replicateM (S.size vs) fresh
-  let m = M.fromList $ zip (TvName <$> S.toList vs) (TVar <$> tvs)
-  pure $ (replaceTyvars m t, replaceTyvars m <$> args)
+  let m = M.fromList $ zip (S.toList vs) (TVar <$> tvs)
+  pure $ (replaceNamedTypes m t, replaceNamedTypes m <$> args)
 
 containsVar :: Type Qual -> TyVar -> Bool
 TVar v     `containsVar` u = v == u
@@ -187,12 +190,12 @@ typeVars = \case
   TVar v     -> S.singleton v
   TApp t0 t1 -> typeVars t0 <> typeVars t1
 
-freeTvs :: Scheme Qual -> Set TyVar
-freeTvs (Scheme vs t) = typeVars t S.\\ (S.map TvName vs)
+typeVars' :: Scheme Qual -> Set TyVar
+typeVars' (Scheme _ t) = typeVars t
 
 getEnvFreeTvs :: Infer (Set TyVar)
 getEnvFreeTvs = Infer $ \ e _ _ s u ->
-  let vs = foldMap freeTvs e
+  let vs = foldMap typeVars' e
   in pure (vs,s,u)
 
 withEnv :: TypeEnv -> Infer a -> Infer a
@@ -308,9 +311,17 @@ instance TqcMonad Infer where
 
 -- }}}
 
+replaceNamedTypes :: Map Text (Type Qual) -> Type Qual -> Type Qual
+replaceNamedTypes m = go where
+  go = \ case
+    t@(TName (Qual (Module []) x)) -> M.findWithDefault t x m
+    TName x    -> TName x
+    TVar v     -> TVar v
+    TApp t0 t1 -> TApp (go t0) (go t1)
+
 replaceTyvars :: Map TyVar (Type Qual) -> Type Qual -> Type Qual
 replaceTyvars m = go where
-  go = \case
+  go = \ case
     TName x    -> TName x
     TVar v     -> M.findWithDefault (TVar v) v m
     TApp t0 t1 -> TApp (go t0) (go t1)
@@ -326,35 +337,24 @@ generalize excl ty =
       -- Limit them to the ones we need to quantify over
       quantVars = allVars S.\\ excl
 
-      -- Find the ones where we need to rename the var (each one with a
-      -- numeric tyvar)
-      (namedVars, unifVars) = partitionEithersSet $ S.map (\case { TvName n -> Left n; TvUnif u -> Right u }) quantVars
-
-      -- Get the list of generated tyvar names we can use
-      genNames = filter (\x -> TvName x `S.notMember` allVars) allGenNames
-      
-      -- Create a mapping from tyvars to tyvar names they should be replaced
+      -- Create a mapping from tyvars to names they should be replaced
       -- with
-      tvMapping = M.fromList $ zip (S.toList $ S.map TvUnif unifVars) genNames
+      tvMapping = M.fromList $ zip (S.toList quantVars) genNames
 
-      -- Map TVar . TvName over the above to make a map from tyvars to
+      -- Map TName over the above to make a map from tyvars to
       -- the actual types they should be replaced with
-      tvMapping' = TVar . TvName <$> tvMapping
+      tvMapping' = TName . Qual (Module []) <$> tvMapping
 
-      -- We quantify over both quantVars and the names we're replacing
-      -- tyvars with
-      allQuantVars = namedVars <> S.fromList (M.elems tvMapping)
+  in Scheme (S.fromList $ M.elems tvMapping) (replaceTyvars tvMapping' ty)
 
-  in Scheme allQuantVars (replaceTyvars tvMapping' ty)
-
-  where allGenNames = fmap T.singleton ['a'..'z']
-                   ++ fmap (T.cons 'a' . T.pack . show) [0 :: Integer ..]
+  where genNames = fmap T.singleton ['a'..'z']
+                ++ fmap (T.cons 'a' . T.pack . show) [0 :: Integer ..]
 
 instantiate :: Scheme Qual -> Infer (Type Qual)
 instantiate (Scheme vs ty) = do
   tvs <- replicateM (S.size vs) fresh
-  let m = M.fromList $ zip (TvName <$> S.toList vs) (TVar <$> tvs)
-  pure $ replaceTyvars m ty
+  let m = M.fromList $ zip (S.toList vs) (TVar <$> tvs)
+  pure $ replaceNamedTypes m ty
 
 getSub :: Infer Substitution
 getSub = Infer $ \ _ _ _ s u -> pure (s, s, u)

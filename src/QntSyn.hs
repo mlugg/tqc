@@ -111,9 +111,8 @@ data Type id
   | TApp (Type id) (Type id)
   deriving (Eq)
 
-data TyVar = TvName Text
-           | TvUnif Integer
-           deriving (Ord, Eq, Show)
+newtype TyVar = TyVar Integer
+  deriving (Ord, Eq, Show)
 
 infixr 5 `tArrow`
 
