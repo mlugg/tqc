@@ -90,12 +90,10 @@ Scheme qsL tL `asInstanceOf` Scheme qsR tR =
     -- instance of 'forall a. a', but not the other way around).
     (_, TApp _ _) -> Nothing
 
-  where -- qsL' and qsR' are slightly modified forms of qsL and qsR
-        -- where each variable is wrapped in a 'Qual' constructor,
-        -- making it a 'Qual' rather than a 'Text'. Used for some
-        -- comparisons in the first case.
+  where -- qsL' is a slightly modified forms of qsL where each variable
+        -- is wrapped in a 'Qual' constructor, making it a 'Qual' rather
+        -- than a 'Text'. Used for some comparisons in the first case.
         qsL' = S.map (Qual (Module [])) qsL
-        qsR' = S.map (Qual (Module [])) qsR
 
         -- 'combine' takes two substitutions and merges them. The
         -- 'Data.Map.Merge.Lazy' module allows us to easily define a
@@ -156,7 +154,7 @@ fresh = Infer $ \ _ _ _ s u -> pure (TyVar u, s, (u+1))
 lookupConstr :: Qual -> Infer (Set Text, Type Qual, [Type Qual])
 lookupConstr c = lookupConstr' c >>= \case
   Just x  -> pure x
-  Nothing -> throwTypeErr _
+  Nothing -> throwTypeErr $ TeUnknownVar (QualName c)
 
 lookupConstr' :: Qual -> Infer (Maybe (Set Text, Type Qual, [Type Qual]))
 lookupConstr' c = Infer $ \ _ _ e s u -> pure (M.lookup c e, s, u)
@@ -213,7 +211,7 @@ getKind = \case
   TName n ->
     lookupKind n >>= \case
       Just k -> pure k
-      Nothing -> throwTypeErr _
+      Nothing -> throwTypeErr $ TeUnknownType n
 
   TVar _ -> pure KStar
 
@@ -221,7 +219,7 @@ getKind = \case
     k <- getKind t1
     getKind t0 >>= \case
       KArrow kl kr | kl == k -> pure kr
-      _ -> throwTypeErr _
+      k' -> throwTypeErr $ TeBadTypeApp t0 k' t1 k
 
 checkKind :: Type Qual -> Infer ()
 checkKind t = getKind t >>= \case
@@ -427,7 +425,7 @@ infer = withKindCheck . \case -- withKindCheck here enforces that every term mus
   -- the type environment.
   QntVar n ->
     lookupType n >>= \case
-      Nothing -> throwTypeErr _
+      Nothing -> throwTypeErr $ TeUnknownVar n
       Just s  -> instantiate s <&> \t -> (t, QntVar n)
 
   -- The type of a literal is hardcoded (see the natType constant
@@ -555,7 +553,7 @@ inferPat = \case
 
     -- Sub-patterns and constructor arguments should be in a one-to-one
     -- correspondence
-    when (length as /= length ps) $ throwTypeErr _
+    when (length as /= length ps) $ throwTypeErr $ TeBadPatternArgs c (length as) (length ps)
 
     (es,ps') <-
       fmap unzip $

@@ -51,6 +51,7 @@ freshName = Convert $ \ n ->
 frees :: QntExpr 'Typechecked -> Seq LName
 frees = \ case
   QntVar (LoclName n) -> Seq.singleton n
+  QntVar _ -> mempty
   QntNatLit _ -> mempty
   QntApp e0 e1 -> freesL e0 <> freesL e1
   QntLam (TcBinder n _) e -> seqRemove [SrcName n] $ freesL e
@@ -101,7 +102,7 @@ convertExpr = \ case
     scrutLname <- freshName
     let scrutRname = LoclName scrutLname
     scrutBind <- NclBind (NclBinder scrutLname) (freesL' e) <$> convertLExpr e
-    cvtdCase <- match [scrutRname] (as <&> \ (L _ (QntAlt p (L _ e))) -> MatchAlt [p] e) caseDefaultErr
+    cvtdCase <- match [scrutRname] (as <&> \ (L _ (QntAlt p (L _ e'))) -> MatchAlt [p] e') caseDefaultErr
     -- We have to wrap the case in a let so that it's compiled lazily
     caseLname <- freshName
     let caseRname = LoclName caseLname
@@ -154,11 +155,11 @@ data SameConstrPatGroup = SameConstrPatGroup (Constr 'Typechecked) [([QntPat 'Ty
 groupConstrAlts :: [(ConstrPat 'Typechecked, MatchAlt)] -> [SameConstrPatGroup]
 groupConstrAlts ps =
   let ps' = groupBy ((==) `on` constr) $ sortOn constr ps
-  in ps' <&> \ xs -> SameConstrPatGroup (constr $ head xs) (xs <&> \ (ConstrPat _ ps, a) -> (ps, a))
+  in ps' <&> \ xs -> SameConstrPatGroup (constr $ head xs) (xs <&> \ (ConstrPat _ subPats, a) -> (subPats, a))
   where constr (ConstrPat c _, _) = c
 
 matchGroup :: [RName] -> PatGroup -> NclExpr -> Convert NclExpr
-matchGroup [] (NoPatGroup e) def = convertExpr e
+matchGroup [] (NoPatGroup e) _ = convertExpr e
 matchGroup [] _ def = pure def
 matchGroup (n:ns) g def = case g of
   NamePatGroup as ->

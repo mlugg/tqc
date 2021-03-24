@@ -85,7 +85,7 @@ lookupVar = \case
 -- Looks up a local variable in the current scope. If in scope, the
 -- variable is pushed; otherwise, an error is thrown.
 lookupLocal :: NclBinder -> Compile ()
-lookupLocal x = do
+lookupLocal x@(NclBinder lname) = do
     -- Get the current compilation environment
     e <- ask
     if -- Is the value the current function argument?
@@ -94,8 +94,9 @@ lookupLocal x = do
        | Just i <- M.lookup x (envStack e) -> tellSrc $ pure $ PPushStack (BottomOff i)
        -- Is it a free variable, i.e. in the current function's closure?
        | Just i <- M.lookup x (envFrees e) -> tellSrc $ pure $ PPushClos i
-       -- The variable is unknown
-       | otherwise -> throwErr _
+       -- The variable is unknown; this should have been caught earlier,
+       -- but we'll throw it now anyway
+       | otherwise -> throwErr $ TypeErr $ TeUnknownVar (LoclName lname)
 
 -- Extends the stack with the given variable binders at the given
 -- offsets, and runs an action with this extended stack

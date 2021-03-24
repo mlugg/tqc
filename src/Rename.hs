@@ -42,7 +42,7 @@ renameExpr = \case
     if isLocal
     then pure $ QntVar (LoclName $ SrcName n)
     else findQualified n >>= \case
-      Nothing -> throwErr _ -- TODO XXX
+      Nothing -> throwErr $ UnknownVarErr n
       Just m  -> pure $ QntVar (QualName (Qual m n))
 
   QntLet bs body ->
@@ -91,7 +91,7 @@ renamePat = \case
   QntNatLitPat (NatLitPat x) -> pure $ QntNatLitPat (NatLitPat x)
   QntConstrPat (ConstrPat c ps) ->
     findConstr c >>= \case
-      Nothing -> throwErr _ -- TODO XXX
+      Nothing -> throwErr $ UnknownVarErr c
       Just m  -> QntConstrPat . ConstrPat (Qual m c) <$> traverse renamePat ps
 
 renameLAlt :: LQntAlt 'Parsed -> Rename (LQntAlt 'Renamed)
@@ -106,7 +106,7 @@ renameLScheme = traverse renameScheme
 renameType :: Type Text -> Rename (Type Qual)
 renameType = \case
   TName n -> findQualifiedType n >>= \case
-               Nothing -> throwErr _
+               Nothing -> throwErr $ UnknownTypeErr n
                Just m  -> pure $ TName (Qual m n)
   TVar v     -> pure $ TVar v
   TApp t0 t1 -> TApp <$> renameType t0 <*> renameType t1
@@ -121,4 +121,4 @@ findQualifiedType "Nat" = pure $ Just $ Module ["Data", "Nat"]
 findQualifiedType _ = pure Nothing
 
 findConstr :: Text -> Rename (Maybe Module)
-findConstr x = pure $ Nothing
+findConstr = _

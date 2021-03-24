@@ -30,8 +30,6 @@ pPrintType pr = \case
   TApp x y -> "(" <> pPrintType pr x <> " " <> pPrintType pr y <> ")"
 
   where isSymbolic = not . isAlpha . T.head
-        pr :: Proxy p
-        pr = Proxy
 
 pPrintPat :: forall p. (IsPass p) => QntPat p -> Text
 pPrintPat = \case

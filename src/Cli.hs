@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
 
-module Cli where
+module Cli (parseArgs) where
 
 import Data.Functor
 import Data.Unique
@@ -10,19 +10,8 @@ import Data.Traversable
 import System.Environment
 import System.Console.GetOpt
 import Text.Read
-
-data QuantaFile = QuantaFile
-  { qntSrcName :: FilePath
-  , qntAsmName :: FilePath
-  , qntObjName :: Maybe FilePath
-  } deriving (Show)
-
-data TqcState = TqcState
-  { tqcShared     :: Bool
-  , tqcOptLevel   :: Int
-  , tqcFiles      :: [QuantaFile]
-  , tqcBinaryFile :: Maybe FilePath
-  } deriving (Show)
+import Tqc
+import Data.Foldable
 
 data Option
   = OptAsmOut
@@ -49,7 +38,7 @@ optDescrs =
   , Option ['o'] [] (ReqArg OptOutfile "filename") "Set the output filename."
   ]
 
-parseArgs :: IO (Maybe TqcState)
+parseArgs :: IO (Maybe TqcConfig)
 parseArgs = do
   as <- getArgs
   let (opts, inFiles, errs) = getOpt Permute optDescrs as
@@ -58,7 +47,7 @@ parseArgs = do
 
   if not $ null errs'
   then do
-    traverse putStrLn errs'
+    traverse_ putStrLn errs'
     putStrLn $ usageInfo "Usage:" optDescrs
     pure Nothing
   else do
@@ -68,7 +57,7 @@ parseArgs = do
         doBin = all (`notElem` [OptAsmOut, OptObjOut]) opts
         outfile = foldr (\ case { OptOutfile x -> const $ Just x; _ -> id }) Nothing opts
 
-        mkState = TqcState shared (fromMaybe 3 optlevel)
+        mkState = TqcConfig shared (fromMaybe 3 optlevel)
 
     if
       | doBin -> do -- Outputting a binary
