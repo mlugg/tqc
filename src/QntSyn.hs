@@ -68,9 +68,14 @@ data QntBind p
   | QntExpl (Binder p) (LQntExpr p) (LScheme (TyId p))
 
 data QntPat p
-  = QntNamePat (Binder p)
-  | QntNatLitPat Natural
-  | QntConstrPat (Constr p) [QntPat p]
+  = QntNamePat (NamePat p)
+  | QntNatLitPat NatLitPat
+  | QntConstrPat (ConstrPat p)
+
+newtype NamePat p = NamePat (Binder p)
+newtype NatLitPat = NatLitPat Natural
+  deriving (Eq, Ord)
+data ConstrPat p = ConstrPat (Constr p) [QntPat p]
 
 data QntAlt p = QntAlt (QntPat p) (LQntExpr p)
 

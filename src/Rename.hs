@@ -81,18 +81,18 @@ renameAlt (QntAlt p e) =
   in withLocals ns $ QntAlt <$> renamePat p <*> renameLExpr e
   where
     findPatNames = \case
-      QntNamePat x -> S.singleton x
+      QntNamePat (NamePat x) -> S.singleton x
       QntNatLitPat _ -> S.empty
-      QntConstrPat _ ps -> foldMap findPatNames ps
+      QntConstrPat (ConstrPat _ ps) -> foldMap findPatNames ps
 
 renamePat :: QntPat 'Parsed -> Rename (QntPat 'Renamed)
 renamePat = \case
-  QntNamePat b -> pure $ QntNamePat b
-  QntNatLitPat x -> pure $ QntNatLitPat x
-  QntConstrPat c ps ->
+  QntNamePat (NamePat b) -> pure $ QntNamePat (NamePat b)
+  QntNatLitPat (NatLitPat x) -> pure $ QntNatLitPat (NatLitPat x)
+  QntConstrPat (ConstrPat c ps) ->
     findConstr c >>= \case
       Nothing -> throwErr _ -- TODO XXX
-      Just m  -> QntConstrPat (Qual m c) <$> traverse renamePat ps
+      Just m  -> QntConstrPat . ConstrPat (Qual m c) <$> traverse renamePat ps
 
 renameLAlt :: LQntAlt 'Parsed -> Rename (LQntAlt 'Renamed)
 renameLAlt = traverse renameAlt

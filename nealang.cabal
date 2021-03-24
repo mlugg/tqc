@@ -26,7 +26,8 @@ executable nealang
                , CodeGen.Asm
                , CodeGen.Gen
                , CodeGen.AsmText
-							 , Cli
+               , Cli
+               , QntToNcl
 
   build-depends: base ^>=4.13.0.0
                , megaparsec ^>=9.0.1

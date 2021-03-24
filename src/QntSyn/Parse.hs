@@ -218,8 +218,8 @@ case_ = located $ QntCase <$> (reserved "case" *> expr) <*> (reserved "of" *> br
 
 pattern :: Parser (QntPat 'Parsed)
 pattern = parens pattern
-  <|> QntNamePat <$> identLower
-  <|> QntNatLitPat <$> decimal
-  <|> QntConstrPat <$> identUpperOp <*> many pattern
+  <|> QntNamePat . NamePat <$> identLower
+  <|> QntNatLitPat . NatLitPat <$> decimal
+  <|> QntConstrPat <$> (ConstrPat <$> identUpperOp <*> many pattern)
 
 -- }}}

@@ -32,7 +32,7 @@ import Common
 
 data NclBinder
   = NclBinder LName
-  deriving (Ord, Eq)
+  deriving (Ord, Eq, Show)
 
 data NclExpr
   = NclVar RName
@@ -41,8 +41,10 @@ data NclExpr
   | NclLam NclBinder [NclBinder] NclExpr  -- ELambda arg frees body
   | NclLet [NclBind] NclExpr
   | NclCase RName [NclAlt] NclExpr -- ECase scrutinee alts def
+  deriving (Show)
 
 data NclBind = NclBind NclBinder [NclBinder] NclExpr -- NclBind binder frees body
+  deriving (Show)
 
 nclBinder :: NclBind -> NclBinder
 nclBinder (NclBind b _ _) = b
@@ -50,12 +52,17 @@ nclBinder (NclBind b _ _) = b
 data NclPat
   = NclConstrPat Qual [NclBinder]
   | NclNatLitPat Natural
+  deriving (Show)
 
 data NclAlt = NclAlt NclPat NclExpr
+  deriving (Show)
 
 -- Like NclExpr, DataDecl is untyped
 data DataDecl = DataDecl Text [DataConstr]
+  deriving (Show)
 
 data DataConstr = DataConstr Text Natural  -- DataConstr name nargs
+  deriving (Show)
 
 data NclProg = NclProg [DataDecl] [NclBind]
+  deriving (Show)

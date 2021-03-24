@@ -37,9 +37,9 @@ pPrintType pr = \case
 
 pPrintPat :: forall p. (IsPass p) => QntPat p -> Text
 pPrintPat = \case
-  QntNamePat x -> pPrintBinder pr x
-  QntNatLitPat x -> T.pack $ show x
-  QntConstrPat c ps -> "(" <> psConstrName pr c <> " " <> T.intercalate " " (pPrintPat <$> ps) <> ")"
+  QntNamePat (NamePat x) -> pPrintBinder pr x
+  QntNatLitPat (NatLitPat x) -> T.pack $ show x
+  QntConstrPat (ConstrPat c ps) -> "(" <> psConstrName pr c <> " " <> T.intercalate " " (pPrintPat <$> ps) <> ")"
   where pr :: Proxy p
         pr = Proxy
 

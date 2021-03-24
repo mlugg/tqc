@@ -279,9 +279,9 @@ instance Substitute (QntAlt 'Typechecked) where
 
 instance Substitute (QntPat 'Typechecked) where
   applySub s = \case
-    QntNamePat n -> QntNamePat (applySub s n)
-    QntNatLitPat x -> QntNatLitPat x
-    QntConstrPat c ps -> QntConstrPat c (applySub s <$> ps)
+    QntNamePat (NamePat n) -> QntNamePat (NamePat $ applySub s n)
+    QntNatLitPat (NatLitPat x) -> QntNatLitPat (NatLitPat x)
+    QntConstrPat (ConstrPat c ps) -> QntConstrPat $ ConstrPat c (applySub s <$> ps)
 
 instance (Substitute a) => Substitute (Located a) where
   applySub s (L p x) = L p (applySub s x)
@@ -535,17 +535,17 @@ inferPat = \case
   -- variable which represents the bound variable's type, returning it
   -- in the environment, and also requiring the scruntinised expression
   -- to have that same type.
-  QntNamePat n -> do
+  QntNamePat (NamePat n) -> do
     un <- fresh
     let tn = TVar un
-    pure (singletonTypeEnv n (Scheme S.empty tn), tn, QntNamePat (TcBinder n tn))
+    pure (singletonTypeEnv n (Scheme S.empty tn), tn, QntNamePat (NamePat $ TcBinder n tn))
 
   -- Numeric literal patterns don't introduce any bound variables, but
   -- they do enforce that the scrutinee is of type 'Nat'.
-  QntNatLitPat x ->
-    pure (mempty, natType, QntNatLitPat x)
+  QntNatLitPat (NatLitPat x) ->
+    pure (mempty, natType, QntNatLitPat (NatLitPat x))
 
-  QntConstrPat c ps -> do
+  QntConstrPat (ConstrPat c ps) -> do
     -- Lookup the given constructor, and instantiate it with new type
     -- variables to prevent it conflicting with different uses of the
     -- same constructor. This returns 'tConstr', the type which the
@@ -581,7 +581,7 @@ inferPat = \case
     -- Combine all the environments into one with 'fold', give the
     -- scruntinee the known constructor type, and return the Typechecked
     -- pattern
-    pure (fold es, tConstr, QntConstrPat c ps')
+    pure (fold es, tConstr, QntConstrPat $ ConstrPat c ps')
 
 inferBinds :: [QntBind 'Renamed] -> Infer (TypeEnv, [QntBind 'Typechecked])
 inferBinds bs = do
@@ -622,9 +622,9 @@ inferBinds bs = do
 
 patBinds :: QntPat 'Renamed -> Set LName
 patBinds = \case
-  QntNamePat n -> S.singleton (SrcName n)
+  QntNamePat (NamePat n) -> S.singleton (SrcName n)
   QntNatLitPat _ -> S.empty
-  QntConstrPat _ ps -> foldMap patBinds ps
+  QntConstrPat (ConstrPat _ ps) -> foldMap patBinds ps
 
 freeVars' :: LQntExpr 'Renamed -> Set LName
 freeVars' (L _ e) = freeVars e
