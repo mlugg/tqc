@@ -26,6 +26,7 @@ data CompileError
   | TypeErr TypeError
   | UnknownVarErr Text
   | UnknownTypeErr Text
+  | AmbiguousNameErr Text [Qual]
 
 data QuantaFile = QuantaFile
   { qntSrcName :: FilePath

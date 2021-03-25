@@ -11,29 +11,45 @@ import Control.Monad
 import Data.Traversable
 import Common
 
-newtype Rename a = Rename { runRename :: Set Text -> Tqc a }
+newtype Rename a = Rename { runRename :: [Qual] -> [Qual] -> Set Text -> Tqc a }
   deriving (Functor)
 
 instance Applicative Rename where
-  pure x = Rename $ \_ -> pure x
+  pure x = Rename $ \ _ _ _ -> pure x
   (<*>) = ap
 
 instance Monad Rename where
-  m >>= f = Rename $ \locs -> do
-    x <- runRename m locs
-    runRename (f x) locs
+  m >>= f = Rename $ \ vals types locs -> do
+    x <- runRename m vals types locs
+    runRename (f x) vals types locs
 
 instance TqcMonad Rename where
-  lift m = Rename $ \_ -> m
+  lift m = Rename $ \ _ _ _ -> m
 
 lookupLocal :: Text -> Rename Bool
-lookupLocal x = Rename $ \locs -> pure $ x `S.member` locs
+lookupLocal x = Rename $ \ _ _ locs -> pure $ x `S.member` locs
 
 withLocals :: Set Text -> Rename a -> Rename a
-withLocals new m = Rename $ \locs -> runRename m (new <> locs)
+withLocals new m = Rename $ \ vals types locs -> runRename m vals types (new <> locs)
 
 withLocal :: Text -> Rename a -> Rename a
 withLocal = withLocals . S.singleton
+
+findQualified :: Text -> Rename (Maybe Module)
+findQualified x = Rename $ \ vals _ _ ->
+  let matches = filter (\ (Qual _ y) -> x == y) vals
+  in case matches of
+    [Qual m _] -> pure $ Just m
+    []         -> pure $ Nothing
+    _          -> throwErr $ AmbiguousNameErr x matches
+
+findQualifiedType :: Text -> Rename (Maybe Module)
+findQualifiedType x = Rename $ \ _ types _ ->
+  let matches = filter (\ (Qual _ y) -> x == y) types
+  in case matches of
+    [Qual m _] -> pure $ Just m
+    []         -> pure $ Nothing
+    _          -> throwErr $ AmbiguousNameErr x matches
 
 renameExpr :: QntExpr 'Parsed -> Rename (QntExpr 'Renamed)
 renameExpr = \case
@@ -90,7 +106,7 @@ renamePat = \case
   QntNamePat (NamePat b) -> pure $ QntNamePat (NamePat b)
   QntNatLitPat (NatLitPat x) -> pure $ QntNatLitPat (NatLitPat x)
   QntConstrPat (ConstrPat c ps) ->
-    findConstr c >>= \case
+    findQualified c >>= \case
       Nothing -> throwErr $ UnknownVarErr c
       Just m  -> QntConstrPat . ConstrPat (Qual m c) <$> traverse renamePat ps
 
@@ -110,15 +126,3 @@ renameType = \case
                Just m  -> pure $ TName (Qual m n)
   TVar v     -> pure $ TVar v
   TApp t0 t1 -> TApp <$> renameType t0 <*> renameType t1
-
-findQualified :: Text -> Rename (Maybe Module)
-findQualified "-" = pure $ Just $ Module ["Data", "Nat"]
-findQualified _ = pure Nothing
-
-findQualifiedType :: Text -> Rename (Maybe Module)
-findQualifiedType "->" = pure $ Just $ Module []
-findQualifiedType "Nat" = pure $ Just $ Module ["Data", "Nat"]
-findQualifiedType _ = pure Nothing
-
-findConstr :: Text -> Rename (Maybe Module)
-findConstr = _

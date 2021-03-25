@@ -27,46 +27,46 @@ data CompileEnv = CompileEnv
 
 -- Monad definition and operations {{{
 
-newtype Compile a = Compile { runCompile :: CompileEnv -> Natural -> Tqc (a, [PhtnFunc], PhtnSrc, Natural) }
+newtype Compile a = Compile { runCompile :: Map Qual Word64 -> CompileEnv -> Natural -> Tqc (a, [PhtnFunc], PhtnSrc, Natural) }
   deriving (Functor)
 
 instance Applicative Compile where
-  pure x = Compile $ \_ n -> pure (x, mempty, mempty, n)
+  pure x = Compile $ \ _ _ n -> pure (x, mempty, mempty, n)
   (<*>) = ap
 
 instance Monad Compile where
-  m >>= f = Compile $ \e n0 -> do
-    (x, fs0, src0, n1) <- runCompile m e n0
-    (y, fs1, src1, n2) <- runCompile (f x) e n1
+  m >>= f = Compile $ \ ce e n0 -> do
+    (x, fs0, src0, n1) <- runCompile m ce e n0
+    (y, fs1, src1, n2) <- runCompile (f x) ce e n1
     pure (y, fs0 <> fs1, src0 <> src1, n2)
 
 instance TqcMonad Compile where
-  lift m = Compile $ \_ n -> (\x -> (x, mempty, mempty, n)) <$> m
+  lift m = Compile $ \ _ _ n -> (\x -> (x, mempty, mempty, n)) <$> m
 
 ask :: Compile CompileEnv
-ask = Compile $ \e n -> pure (e, mempty, mempty, n)
+ask = Compile $ \ _ e n -> pure (e, mempty, mempty, n)
 
 asks :: (CompileEnv -> a) -> Compile a
 asks f = fmap f ask
 
 tellSrc :: PhtnSrc -> Compile ()
-tellSrc src = Compile $ \_ n -> pure ((), mempty, src, n)
+tellSrc src = Compile $ \ _ _ n -> pure ((), mempty, src, n)
 
 flushSrc :: Compile a -> Compile (a, PhtnSrc)
-flushSrc m = Compile $ \e n -> f <$> runCompile m e n
+flushSrc m = Compile $ \ ce e n -> f <$> runCompile m ce e n
   where f (x, fns, src, n) = ((x, src), fns, mempty, n)
 
 flushSrc' :: Compile () -> Compile PhtnSrc
 flushSrc' = fmap snd . flushSrc
 
 tellFun :: PhtnFunc -> Compile ()
-tellFun fn = Compile $ \_ n -> pure ((), pure fn, mempty, n)
+tellFun fn = Compile $ \ _ _ n -> pure ((), pure fn, mempty, n)
 
 freshId :: Compile Natural
-freshId = Compile $ \_ n -> pure (n, mempty, mempty, n+1)
+freshId = Compile $ \ _ _ n -> pure (n, mempty, mempty, n+1)
 
 withEnv :: (CompileEnv -> CompileEnv) -> Compile a -> Compile a
-withEnv f m = Compile $ runCompile m . f
+withEnv f m = Compile $ \ ce e n -> runCompile m ce (f e) n
 
 -- }}}
 
@@ -290,4 +290,6 @@ compileCase (NclAlt pat expr) = do
   pure $ SwitchAlt constrId src
 
 lookupConstr :: Qual -> Compile Word64
-lookupConstr = _
+lookupConstr c = Compile $ \ ce _ n -> case M.lookup c ce of
+  Nothing -> throwErr $ TypeErr $ TeUnknownVar $ QualName c -- This should have been caught earlier, but we'll throw it now anyway
+  Just x  -> pure (x, mempty, mempty, n)
