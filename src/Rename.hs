@@ -111,18 +111,20 @@ renameLAlt :: LQntAlt 'Parsed -> Rename (LQntAlt 'Renamed)
 renameLAlt = traverse renameAlt
 
 renameScheme :: Scheme Text -> Rename (Scheme Qual)
-renameScheme (Scheme vs t) = Scheme vs <$> renameType t
+renameScheme (Scheme vs t) = Scheme vs <$> renameType vs t
 
 renameLScheme :: LScheme Text -> Rename (LScheme Qual)
 renameLScheme = traverse renameScheme
 
-renameType :: Type Text -> Rename (Type Qual)
-renameType = \case
-  TName n -> findQualifiedType n >>= \case
-               Nothing -> throwErr $ UnknownTypeErr n
-               Just m  -> pure $ TName (Qual m n)
-  TVar v     -> pure $ TVar v
-  TApp t0 t1 -> TApp <$> renameType t0 <*> renameType t1
+renameType :: Set Text -> Type Text -> Rename (Type Qual)
+renameType excl = go where
+  go = \case
+    TName n | n `S.member` excl -> pure $ TName $ Qual (Module []) n
+    TName n -> findQualifiedType n >>= \case
+                 Nothing -> throwErr $ UnknownTypeErr n
+                 Just m  -> pure $ TName (Qual m n)
+    TVar v     -> pure $ TVar v
+    TApp t0 t1 -> TApp <$> go t0 <*> go t1
 
 renameBind :: QntBind 'Parsed -> Rename (QntBind 'Renamed)
 renameBind = \ case
@@ -133,4 +135,4 @@ renameData :: DataDecl 'Parsed -> Rename (DataDecl 'Renamed)
 renameData (DataDecl x ps cs) = DataDecl x ps <$> traverse renameConstr cs
 
 renameConstr :: DataConstr 'Parsed -> Rename (DataConstr 'Renamed)
-renameConstr (DataConstr x as) = DataConstr x <$> traverse renameType as
+renameConstr (DataConstr x as) = DataConstr x <$> traverse (renameType S.empty) as

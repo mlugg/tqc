@@ -98,6 +98,13 @@ obj_Data.Nat.mul:
   dd 1
   dq mk_mul
 
+global obj_Data.Nat.div
+obj_Data.Nat.div:
+  dw FLAG_STATIC
+  dw OBJ_TYPE_THUNK_0
+  dd 1
+  dq mk_div
+
 section .text
 
 ; Add {{{
@@ -133,6 +140,23 @@ mk_mul:
   push rdx
   mov rax, r9
   mul r10
+  mov r11, rax
+  pop rdx
+
+  end_fun
+
+; }}}
+
+; Div {{{
+
+mk_div:
+  start_fun
+
+  ; div is also dumb
+  push rdx
+	xor rdx, rdx
+  mov rax, r9
+  div r10
   mov r11, rax
   pop rdx
 
