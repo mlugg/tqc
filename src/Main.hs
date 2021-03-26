@@ -249,8 +249,8 @@ printTypeError = \ case
   TeInfiniteType t0 t1 -> "cannot construct the infinite type '" <> pPrintType p t0 <> " ~ " <> pPrintType p t1 <> "'"
   TeKindNotStar -> "expected a type but got an unapplied type constructor"
   TeBadTypeApp t0 k0 t1 k1 -> "kind mismatch in type application: cannot apply type '" <> pPrintType p t1 <> " :: " <> pPrintKind k1 <> "' to '" <> pPrintType p t0 <> " :: " <> pPrintKind k0 <> "'"
-  TeUnknownVar n -> "unknown identifier " <> psPrintId p n
-  TeUnknownType n -> "unknown type name " <> psPrintTyId p n
+  TeUnknownVar n -> "unknown identifier '" <> psPrintId p n <> "'"
+  TeUnknownType n -> "unknown type name '" <> psPrintTyId p n <> "'"
   TeBadPatternArgs q n m -> "bad pattern match for constructor '" <> psPrintId p (QualName q) <> "': expected " <> T.pack (show n) <> " args but got " <> T.pack (show m)
   where p :: Proxy 'Renamed
         p = Proxy

@@ -14,15 +14,11 @@ import Tqc
 import QntSyn
 import NclSyn
 import qualified Data.Text as T
-import qualified Data.Sequence as Seq
-import Data.Sequence (Seq)
+import qualified Data.Set as S
+import Data.Set (Set)
 import Data.Traversable
 import Data.List
 import Data.Function
-
--- Helper function to remove a list of elements from a Seq
-seqRemove :: (Eq a) => [a] -> Seq a -> Seq a
-seqRemove xs s = Seq.filter (`notElem` xs) s
 
 -- Convert monad {{{
 
@@ -51,28 +47,28 @@ freshName = Convert $ \ n ->
 
 -- }}}
 
-frees :: QntExpr 'Typechecked -> Seq LName
+frees :: QntExpr 'Typechecked -> Set LName
 frees = \ case
-  QntVar (LoclName n) -> Seq.singleton n
+  QntVar (LoclName n) -> S.singleton n
   QntVar _ -> mempty
   QntNatLit _ -> mempty
   QntApp e0 e1 -> freesL e0 <> freesL e1
-  QntLam (TcBinder n _) e -> seqRemove [SrcName n] $ freesL e
+  QntLam (TcBinder n _) e -> S.delete (SrcName n) $ freesL e
   QntLet bs e ->
     let fs = foldMap freesL (e : fmap bindExpr bs)
-    in seqRemove (SrcName . bindName <$> bs) fs
+    in fs S.\\ S.fromList (SrcName . bindName <$> bs)
   QntCase e as -> freesL e <> foldMap altFrees as
 
-freesL :: LQntExpr 'Typechecked -> Seq LName
+freesL :: LQntExpr 'Typechecked -> Set LName
 freesL (L _ e) = frees e
 
 freesL' :: LQntExpr 'Typechecked -> [NclBinder]
 freesL' e = NclBinder <$> toList (freesL e)
 
-altFrees :: LQntAlt 'Typechecked -> Seq LName
-altFrees (L _ (QntAlt p e)) = seqRemove (toList $ patBinds p) $ freesL e
+altFrees :: LQntAlt 'Typechecked -> Set LName
+altFrees (L _ (QntAlt p e)) = freesL e S.\\ patBinds p
   where patBinds = \ case
-          QntNamePat (NamePat (TcBinder n _)) -> Seq.singleton (SrcName n)
+          QntNamePat (NamePat (TcBinder n _)) -> S.singleton (SrcName n)
           QntNatLitPat _ -> mempty
           QntConstrPat (ConstrPat _ ps) -> foldMap patBinds ps
 
@@ -108,7 +104,7 @@ convertExpr = \ case
     -- We have to wrap the case in a let so that it's compiled lazily
     caseLname <- freshName
     let caseRname = LoclName caseLname
-    let caseBind = NclBind (NclBinder caseLname) (NclBinder scrutLname : toList (NclBinder <$> foldMap altFrees as)) cvtdCase
+    let caseBind = NclBind (NclBinder caseLname) (NclBinder scrutLname : toList (NclBinder `S.map` foldMap altFrees as)) cvtdCase
 
     pure $ NclLet [scrutBind, caseBind] (NclVar caseRname)
   where caseDefaultErr = NclVar $ QualName $ Qual (Module []) "error"

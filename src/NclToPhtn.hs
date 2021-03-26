@@ -27,7 +27,7 @@ data CompileEnv = CompileEnv
   , envFrees :: Map NclBinder Word64 -- A map from binders to function closure offsets
   , envStack :: Map NclBinder Word64 -- A map from binders to stack offsets
   , envStackOff :: Word64 -- The current size of the stack frame
-  }
+  } deriving (Show)
 
 -- Monad definition and operations {{{
 
