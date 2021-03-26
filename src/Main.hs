@@ -22,8 +22,15 @@ import qualified QntToNcl
 import qualified NclToPhtn
 import qualified CodeGen.Gen as CodeGen
 import qualified CodeGen.AsmText as AsmText
+import System.Process
+import System.Exit
+import PhtnSyn
+import Data.Maybe
 
 data ModuleInfo p = ModuleInfo Module [DataDecl p] [QntBind p]
+
+tNat :: Type Qual
+tNat = TName $ Qual (Module ["Data", "Nat"]) "Nat"
 
 builtinKindEnv :: KindEnv
 builtinKindEnv = M.fromList
@@ -34,6 +41,7 @@ builtinKindEnv = M.fromList
 builtinTypeEnv :: TypeEnv
 builtinTypeEnv = M.fromList
   [ (QualName $ Qual (Module []) "error", Scheme (S.singleton "a") (TName $ Qual (Module []) "a"))
+  , (QualName $ Qual (Module ["Data", "Nat"]) "add", Scheme mempty (tNat `tArrow` tNat `tArrow` tNat))
   ]
 
 builtinConstrEnv :: ConstrEnv
@@ -130,6 +138,12 @@ compilerMain = do
 
       constrEnv' = builtinConstrEnv <> constrEnv
 
+      constrIds = fold $ do
+        ModuleInfo modu datas _ <- infosRenamed
+        DataDecl _ _ constrs <- datas
+        let f (DataConstr name _) x = (Qual modu name, x)
+        pure $ M.fromList $ zipWith f constrs [0..]
+
   infosTypechecked <- for infosRenamed $ \ (ModuleInfo modu datas binds) -> do
     (info, _) <- runInfer' typeEnv' kindEnv' constrEnv' $ do
       datas' <- traverse (checkDataConstrs modu) datas
@@ -137,19 +151,28 @@ compilerMain = do
       pure $ ModuleInfo modu datas' binds'
     pure info
 
-  for_ (zip infosTypechecked (tqcFiles cfg)) $ \ (ModuleInfo modu datas binds, QuantaFile _ asmOut objOut) -> do
+  for_ (zip infosTypechecked (tqcFiles cfg)) $ \ (ModuleInfo modu _ binds, QuantaFile _ asmOutFile objOutFile) -> do
     -- Note that the free variables of these binds are meaningless, as
     -- they are top-level
     nclBinds <- QntToNcl.runConvert' $ traverse QntToNcl.convertBind binds
-    (phtnBinds, phtnFuncs) <- NclToPhtn.runCompile' mempty {-TODO-} $ traverse NclToPhtn.compileTopLevelBind nclBinds
+    (phtnBinds, phtnFuncs) <- NclToPhtn.runCompile' constrIds $ traverse NclToPhtn.compileTopLevelBind nclBinds
     asmFuncs <- CodeGen.runGen' $ traverse CodeGen.genFunc phtnFuncs
+
     let moduleStr = case modu of Module ms -> T.intercalate "." ms
+
+        localNames = phtnBinds <&> \ (name, _) -> "obj_" <> moduleStr <> "." <> name
+        externNames = foldMap getPhtnGlobalRefs phtnFuncs S.\\ S.fromList localNames
+
+        externsSrc = foldMap (\ n -> "extern " <> n <> "\n") externNames
+
         funcsSrc = T.intercalate "\n\n" $ AsmText.asmFuncText <$> asmFuncs
+
         objsSrc = fold $ phtnBinds <&> \ (name, funcName) ->
           let objname = "obj_" <> moduleStr <> "." <> name
+              extra = if name /= "main" then "" else "global obj_main\nobj_main:\n"
           in T.unlines
             [ "global " <> objname
-            , objname <> ":"
+            , extra <> objname <> ":"
             , "\tdw FLAG_STATIC"
             , "\tdw OBJ_TYPE_THUNK_0"
             , "\tdd 1"
@@ -157,7 +180,35 @@ compilerMain = do
             , ""
             ]
 
-    liftIO $ TIO.putStrLn $ "section .data\n\n" <> objsSrc <> "\nsection .text\n\n" <> funcsSrc <> "\n"
+        fullSrc = T.unlines
+          [ "%include \"asm/runtime.inc\""
+          , ""
+          , externsSrc
+          , "section .data"
+          , ""
+          , objsSrc
+          , "section .text"
+          , ""
+          , funcsSrc
+          ]
+
+    liftIO $ TIO.writeFile asmOutFile fullSrc
+    liftIO $ putStrLn $ "Wrote " <> asmOutFile
+
+    case objOutFile of
+      Nothing -> pure ()
+      Just objOutFile' -> do
+        liftIO (rawSystem "nasm" ["-f", "elf64", asmOutFile, "-o", objOutFile']) >>= \ case
+          ExitFailure _ -> throwErr $ NasmErr objOutFile'
+          ExitSuccess -> liftIO $ putStrLn $ "Wrote " <> objOutFile'
+
+  case tqcBinaryFile cfg of
+    Nothing -> pure ()
+    Just binOutFile -> do
+      let objFiles = catMaybes $ (\ (QuantaFile _ _ objOutFile) -> objOutFile) <$> tqcFiles cfg
+      liftIO (rawSystem "ld" (objFiles <> ["runtime.a", "-o", binOutFile])) >>= \ case
+        ExitFailure _ -> throwErr $ LinkErr binOutFile
+        ExitSuccess -> liftIO $ putStrLn $ "Wrote " <> binOutFile
 
 main :: IO ()
 main = parseArgs >>= \ case

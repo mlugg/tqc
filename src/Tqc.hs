@@ -36,6 +36,8 @@ data CompileError
   | UnknownTypeErr Text
   | AmbiguousNameErr Text [Qual]
   | ParseErr (ParseErrorBundle Text Void)
+  | NasmErr FilePath
+  | LinkErr FilePath
   deriving (Show)
 
 data QuantaFile = QuantaFile

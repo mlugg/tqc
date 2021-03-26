@@ -34,6 +34,7 @@ executable nealang
                , text ^>=1.2.4.0
                , parser-combinators ^>=1.2.1
                , containers ^>=0.6.4.1
+							 , process ^>=1.6.10.0
 
 
   ghc-options: -fdefer-typed-holes

@@ -1,8 +1,12 @@
+{-# LANGUAGE LambdaCase #-}
+
 module PhtnSyn where
 
 import Data.Word
 import Data.Text (Text)
 import Data.Sequence
+import Data.Set (Set)
+import qualified Data.Set as S
 
 type PhtnSrc = Seq PhtnInsn
 
@@ -38,3 +42,9 @@ data StackPos
   = TopOff Word64
   | BottomOff Word64
   deriving (Show)
+
+getPhtnGlobalRefs :: PhtnFunc -> Set Text
+getPhtnGlobalRefs (PhtnFunc _ is) = foldMap go is where
+  go = \ case
+    PPushGlobl x -> S.singleton x
+    _            -> mempty

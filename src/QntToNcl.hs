@@ -94,7 +94,7 @@ convertExpr = \ case
   QntApp e0 e1 -> NclApp <$> convertLExpr e0 <*> convertLExpr e1
   QntLam b e -> do
     let b' = convertBinder b
-        fs = freesL' e
+        fs = freesL' e \\ [b']
     e' <- convertLExpr e
     pure $ NclLam b' fs e'
   QntLet bs e -> NclLet

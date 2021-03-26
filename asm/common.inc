@@ -10,8 +10,8 @@
 ;   be accurately tracked by the GC.
 ;
 ; For function entry code:
-;   r8: function argument
-;   r9: function object when calling functions
+;   r8: function object
+;   r9: function argument
 ;   Returns function return value (may be a thunk!)
 ;
 ; For eval:
@@ -39,15 +39,15 @@
 ; Trivial macro for evaluating the value in r8. Clobbers all scratch
 ; registers.
 %macro eval 0
-  movzx r9, word [r8 + obj.type]
-  call qword [eval_table + r9*8]
+	movzx r9, word [r8 + obj.type]
+	call qword [eval_table + r9*8]
 %endmacro
 
 ; NASM structure defining objects
 struc obj
-  .flags: resw 1
-  .type: resw 1
-  .size: resd 1
-  .hdr_size:
-  .body:
+	.flags: resw 1
+	.type: resw 1
+	.size: resd 1
+	.hdr_size:
+	.body:
 endstruc
