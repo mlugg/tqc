@@ -47,4 +47,6 @@ getPhtnGlobalRefs :: PhtnFunc -> Set Text
 getPhtnGlobalRefs (PhtnFunc _ is) = foldMap go is where
   go = \ case
     PPushGlobl x -> S.singleton x
+    PObjSwitchLit _ alts def -> foldMap go def <> foldMap goAlt alts
     _            -> mempty
+  goAlt (SwitchAlt _ is') = foldMap go is'

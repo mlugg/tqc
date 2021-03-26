@@ -48,6 +48,9 @@ builtinTypeEnv :: TypeEnv
 builtinTypeEnv = M.fromList
   [ (QualName $ Qual (Module []) "error", Scheme (S.singleton "a") (TName $ Qual (Module []) "a"))
   , (QualName $ Qual (Module ["Data", "Nat"]) "add", Scheme mempty (tNat `tArrow` tNat `tArrow` tNat))
+  , (QualName $ Qual (Module ["Data", "Nat"]) "sub", Scheme mempty (tNat `tArrow` tNat `tArrow` tNat))
+  , (QualName $ Qual (Module ["Data", "Nat"]) "mul", Scheme mempty (tNat `tArrow` tNat `tArrow` tNat))
+  , (QualName $ Qual (Module ["Data", "Nat"]) "div", Scheme mempty (tNat `tArrow` tNat `tArrow` tNat))
   ]
 
 builtinConstrEnv :: ConstrEnv
@@ -218,7 +221,8 @@ compilerMain = do
     Nothing -> pure ()
     Just binOutFile -> do
       let objFiles = catMaybes $ (\ (QuantaFile _ _ objOutFile) -> objOutFile) <$> tqcFiles cfg
-      liftIO (rawSystem "ld" (objFiles <> ["runtime.a", "-o", binOutFile])) >>= \ case
+          runtimeLink = if tqcShared cfg then ["-L.", "-ltqc"] else ["libtqc.a"]
+      liftIO (rawSystem "ld" (objFiles <> runtimeLink <> ["-o", binOutFile])) >>= \ case
         ExitFailure _ -> throwErr $ LinkErr binOutFile
         ExitSuccess -> liftIO $ putStrLn $ "Wrote " <> binOutFile
 
