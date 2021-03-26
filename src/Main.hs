@@ -16,9 +16,10 @@ import qualified NclToPhtn
 import qualified CodeGen.Gen as CodeGen
 import qualified CodeGen.AsmText as AsmText
 import qualified QntSyn.Parse
+import QntSyn.Pretty
 
 import qualified Data.Text.IO as TIO
-import Text.Megaparsec (parse)
+import Text.Megaparsec (parse, errorBundlePretty, sourcePosPretty)
 import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Data.Set as S
@@ -30,8 +31,9 @@ import System.Process
 import System.Exit
 import Data.Maybe
 import Data.Text (Text)
+import Data.Proxy
 
-data ModuleInfo p = ModuleInfo Module [DataDecl p] [QntBind p]
+data ModuleInfo p = ModuleInfo FilePath Module [DataDecl p] [QntBind p]
 
 tNat :: Type Qual
 tNat = TName $ Qual (Module ["Data", "Nat"]) "Nat"
@@ -61,6 +63,9 @@ builtinVars = M.keys builtinTypeEnv >>= \ case
 builtinTypes :: [Qual]
 builtinTypes = M.keys builtinKindEnv
 
+wrapErrorFile :: FilePath -> Tqc a -> Tqc a
+wrapErrorFile f m = tqcCatchErr m $ throwErr . InFile f
+
 compilerMain :: Tqc ()
 compilerMain = do
   cfg <- askConf
@@ -71,10 +76,10 @@ compilerMain = do
       Left err -> throwErr $ ParseErr err
       Right (QntProg datas binds) -> do
         let modu = Module $ T.split (`elem` ['/', '\\']) $ T.pack $ qntSrcName file
-        pure $ ModuleInfo modu datas binds
+        pure $ ModuleInfo (qntSrcName file) modu datas binds
 
   let allVars = do
-        ModuleInfo modu datas binds <- infosParsed
+        ModuleInfo _ modu datas binds <- infosParsed
 
         let constrVars = do
               DataDecl _ _ constrs <- datas
@@ -90,21 +95,22 @@ compilerMain = do
       allVars' = builtinVars <> allVars
 
       allTypes = do
-        ModuleInfo modu datas _ <- infosParsed
+        ModuleInfo _ modu datas _ <- infosParsed
         DataDecl name _ _ <- datas
         pure $ Qual modu name
 
       allTypes' = builtinTypes <> allTypes
 
-  infosRenamed <- for infosParsed $ \ (ModuleInfo modu datas binds) ->
-    runRename' allVars' allTypes' $ do
-      datas' <- traverse renameData datas
-      binds' <- traverse renameBind binds
-      pure $ ModuleInfo modu datas' binds'
+  infosRenamed <- for infosParsed $ \ (ModuleInfo filePath modu datas binds) ->
+    wrapErrorFile filePath $
+      runRename' allVars' allTypes' $ do
+        datas' <- traverse renameData datas
+        binds' <- traverse renameBind binds
+        pure $ ModuleInfo filePath modu datas' binds'
 
 
   let typeEnv = fold $ do
-        ModuleInfo modu datas binds <- infosRenamed
+        ModuleInfo _ modu datas binds <- infosRenamed
 
         let constrsEnv = do
               DataDecl typeName params constrs <- datas
@@ -125,7 +131,7 @@ compilerMain = do
       typeEnv' = builtinTypeEnv <> typeEnv
 
       kindEnv = fold $ do
-        ModuleInfo modu datas _ <- infosRenamed
+        ModuleInfo _ modu datas _ <- infosRenamed
         DataDecl name params _ <- datas
         let dataKind = foldr (\ (TyParam _ paramKind) k -> paramKind `KArrow` k) KStar params
         pure $ M.singleton (Qual modu name) dataKind
@@ -133,7 +139,7 @@ compilerMain = do
       kindEnv' = builtinKindEnv <> kindEnv
 
       constrEnv = fold $ do
-        ModuleInfo modu datas _ <- infosRenamed
+        ModuleInfo _ modu datas _ <- infosRenamed
         DataDecl typeName params constrs <- datas
         let paramNames = params <&> \ (TyParam n _) -> n
         let typeOut = foldr TApp (TName $ Qual modu typeName) (TName . Qual (Module []) <$> paramNames)
@@ -143,68 +149,70 @@ compilerMain = do
       constrEnv' = builtinConstrEnv <> constrEnv
 
       constrIds = fold $ do
-        ModuleInfo modu datas _ <- infosRenamed
+        ModuleInfo _ modu datas _ <- infosRenamed
         DataDecl _ _ constrs <- datas
         let f (DataConstr name _) x = (Qual modu name, x)
         pure $ M.fromList $ zipWith f constrs [0..]
 
-  infosTypechecked <- for infosRenamed $ \ (ModuleInfo modu datas binds) -> do
-    (info, _) <- runInfer' typeEnv' kindEnv' constrEnv' $ do
-      datas' <- traverse (checkDataConstrs modu) datas
-      (_, binds') <- inferTopLevelBinds modu binds
-      pure $ ModuleInfo modu datas' binds'
-    pure info
+  infosTypechecked <- for infosRenamed $ \ (ModuleInfo filePath modu datas binds) ->
+    wrapErrorFile filePath $ do
+      (info, _) <- runInfer' typeEnv' kindEnv' constrEnv' $ do
+        datas' <- traverse (checkDataConstrs modu) datas
+        (_, binds') <- inferTopLevelBinds modu binds
+        pure $ ModuleInfo filePath modu datas' binds'
+      pure info
 
-  for_ (zip infosTypechecked (tqcFiles cfg)) $ \ (ModuleInfo modu _ binds, QuantaFile _ asmOutFile objOutFile) -> do
-    -- Note that the free variables of these binds are meaningless, as
-    -- they are top-level
-    nclBinds <- QntToNcl.runConvert' $ traverse QntToNcl.convertBind binds
-    (phtnBinds, phtnFuncs) <- NclToPhtn.runCompile' constrIds $ traverse NclToPhtn.compileTopLevelBind nclBinds
-    asmFuncs <- CodeGen.runGen' $ traverse CodeGen.genFunc phtnFuncs
+  for_ (zip infosTypechecked (tqcFiles cfg)) $ \ (ModuleInfo filePath modu _ binds, QuantaFile _ asmOutFile objOutFile) ->
+    wrapErrorFile filePath $ do
+      -- Note that the free variables of these binds are meaningless, as
+      -- they are top-level
+      nclBinds <- QntToNcl.runConvert' $ traverse QntToNcl.convertBind binds
+      (phtnBinds, phtnFuncs) <- NclToPhtn.runCompile' constrIds $ traverse NclToPhtn.compileTopLevelBind nclBinds
+      asmFuncs <- CodeGen.runGen' $ traverse CodeGen.genFunc phtnFuncs
 
-    let moduleStr = case modu of Module ms -> T.intercalate "." ms
+      let moduleStr = case modu of Module ms -> T.intercalate "." ms
 
-        localNames = phtnBinds <&> \ (name, _) -> "obj_" <> moduleStr <> "." <> name
-        externNames = foldMap getPhtnGlobalRefs phtnFuncs S.\\ S.fromList localNames
+          localNames = phtnBinds <&> \ (name, _) -> "obj_" <> moduleStr <> "." <> name
+          externNames = foldMap getPhtnGlobalRefs phtnFuncs S.\\ S.fromList localNames
 
-        externsSrc = foldMap (\ n -> "extern " <> n <> "\n") externNames
+          externsSrc = foldMap (\ n -> "extern " <> n <> "\n") externNames
 
-        funcsSrc = T.intercalate "\n\n" $ AsmText.asmFuncText <$> asmFuncs
+          funcsSrc = T.intercalate "\n\n" $ AsmText.asmFuncText <$> asmFuncs
 
-        objsSrc = fold $ phtnBinds <&> \ (name, funcName) ->
-          let objname = "obj_" <> moduleStr <> "." <> name
-              extra = if name /= "main" then "" else "global obj_main\nobj_main:\n"
-          in T.unlines
-            [ "global " <> objname
-            , extra <> objname <> ":"
-            , "\tdw FLAG_STATIC"
-            , "\tdw OBJ_TYPE_THUNK_0"
-            , "\tdd 1"
-            , "\tdq " <> funcName
+          objsSrc = fold $ phtnBinds <&> \ (name, funcName) ->
+            let objname = "obj_" <> moduleStr <> "." <> name
+                extra = if name /= "main" then "" else "global obj_main\nobj_main:\n"
+            in T.unlines
+              [ "global " <> objname
+              , extra <> objname <> ":"
+              , "\tdw FLAG_STATIC"
+              , "\tdw OBJ_TYPE_THUNK_0"
+              , "\tdd 1"
+              , "\tdq " <> funcName
+              , ""
+              ]
+
+          fullSrc = T.unlines
+            [ "%include \"asm/runtime.inc\""
             , ""
+            , externsSrc
+            , "section .data"
+            , ""
+            , objsSrc
+            , "section .text"
+            , ""
+            , funcsSrc
             ]
 
-        fullSrc = T.unlines
-          [ "%include \"asm/runtime.inc\""
-          , ""
-          , externsSrc
-          , "section .data"
-          , ""
-          , objsSrc
-          , "section .text"
-          , ""
-          , funcsSrc
-          ]
+      liftIO $ TIO.writeFile asmOutFile fullSrc
+      liftIO $ putStrLn $ "Wrote " <> asmOutFile
 
-    liftIO $ TIO.writeFile asmOutFile fullSrc
-    liftIO $ putStrLn $ "Wrote " <> asmOutFile
-
-    case objOutFile of
-      Nothing -> pure ()
-      Just objOutFile' -> do
-        liftIO (rawSystem "nasm" ["-f", "elf64", asmOutFile, "-o", objOutFile']) >>= \ case
-          ExitFailure _ -> throwErr $ NasmErr objOutFile'
-          ExitSuccess -> liftIO $ putStrLn $ "Wrote " <> objOutFile'
+      case objOutFile of
+        Nothing -> pure ()
+        Just objOutFile' -> do
+          liftIO (rawSystem "nasm" ["-f", "elf64", asmOutFile, "-o", objOutFile']) >>= \ case
+            ExitFailure _ -> throwErr $ NasmErr objOutFile'
+            ExitSuccess -> liftIO $ putStrLn $ "Wrote " <> objOutFile'
 
   case tqcBinaryFile cfg of
     Nothing -> pure ()
@@ -215,7 +223,45 @@ compilerMain = do
         ExitSuccess -> liftIO $ putStrLn $ "Wrote " <> binOutFile
 
 printError :: CompileError -> Text
-printError _ = "error"
+printError = \ case
+  NumRangeErr -> "numeric literal out of range (0 to 2^64 - 1)"
+  TypeErr err -> printTypeError err
+  UnknownVarErr x -> "unknown identifier '" <> x <> "'"
+  UnknownTypeErr x -> "unknown type name '" <> x <> "'"
+  AmbiguousNameErr x ys -> "name '" <> x <> "' is ambiguous; it may refer to any of " <> T.intercalate "," (psPrintId p . QualName <$> ys)
+  ParseErr err -> T.pack $ errorBundlePretty err
+  NasmErr path -> "nasm error while assembling " <> T.pack path
+  LinkErr path -> "linker error while linking " <> T.pack path
+  InFile path err -> "in file " <> T.pack path <> ":\n" <> printError err
+  where p :: Proxy 'Renamed
+        p = Proxy
+
+printTypeError :: TypeError -> Text
+printTypeError = \ case
+  TeInExpr (L ss e) te -> "in " <> printExprType e <> " (" <> printSpan ss <> ")\n" <> printTypeError te
+  TeInScheme (L ss s) te -> "in the type scheme '" <> pPrintScheme p s <> "' (" <> printSpan ss <> ")\n" <> printTypeError te
+  TeSchemeMismatch s1 s2 -> "type schemes '" <> pPrintScheme p s1 <> "' and '" <> pPrintScheme p s2 <> "' do not match"
+  TeTypeMismatch t0 t1 -> "cannot match type '" <> pPrintType p t0 <> "' with '" <> pPrintType p t1 <> "'"
+  TeInfiniteType t0 t1 -> "cannot construct the infinite type '" <> pPrintType p t0 <> " ~ " <> pPrintType p t1 <> "'"
+  TeKindNotStar -> "expected a type but got an unapplied type constructor"
+  TeBadTypeApp t0 k0 t1 k1 -> "kind mismatch in type application: cannot apply type '" <> pPrintType p t1 <> " :: " <> pPrintKind k1 <> "' to '" <> pPrintType p t0 <> " :: " <> pPrintKind k0 <> "'"
+  TeUnknownVar n -> "unknown identifier " <> psPrintId p n
+  TeUnknownType n -> "unknown type name " <> psPrintTyId p n
+  TeBadPatternArgs q n m -> "bad pattern match for constructor '" <> psPrintId p (QualName q) <> "': expected " <> T.pack (show n) <> " args but got " <> T.pack (show m)
+  where p :: Proxy 'Renamed
+        p = Proxy
+
+printExprType :: QntExpr 'Renamed -> Text
+printExprType = \ case
+  QntVar _ -> "identifer"
+  QntNatLit _ -> "numeric literal"
+  QntApp _ _ -> "function application"
+  QntLam _ _ -> "lambda abstraction"
+  QntLet _ _ -> "let expression"
+  QntCase _ _ -> "case statement"
+
+printSpan :: SrcSpan -> Text
+printSpan (SrcSpan start end) = T.pack (sourcePosPretty start) <> " - " <> T.pack (sourcePosPretty end)
 
 main :: IO ()
 main = parseArgs >>= \ case

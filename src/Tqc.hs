@@ -33,6 +33,7 @@ data CompileError
   | ParseErr (ParseErrorBundle Text Void)
   | NasmErr FilePath
   | LinkErr FilePath
+  | InFile FilePath CompileError
 
 data QuantaFile = QuantaFile
   { qntSrcName :: FilePath

@@ -124,3 +124,8 @@ pPrintBinder pr b = case psBinderType pr b of
     , pPrintType pr t
     , ")"
     ]
+
+pPrintKind :: Kind -> Text
+pPrintKind = \ case
+  KStar -> "*"
+  KArrow k0 k1 -> "(" <> pPrintKind k0 <> " -> " <> pPrintKind k1 <> ")"
