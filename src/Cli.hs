@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
 
@@ -97,5 +98,11 @@ createTmpFilepath ext = do
   pure $ archTempDirectory <> "/tqc_tmp_" <> unique <> "." <> ext
 
 archDefaultBinaryFile, archTempDirectory :: String
+
+#ifdef linux_HOST_OS
 archDefaultBinaryFile = "a.out"
 archTempDirectory = "/tmp"
+#else
+archDefaultBinaryFile = "main.exe"
+archTempDirectory = "."
+#endif
