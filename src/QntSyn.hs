@@ -1,4 +1,3 @@
-{-# LANGUAGE Safe                #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE TypeFamilies        #-}

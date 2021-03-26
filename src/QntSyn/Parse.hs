@@ -1,4 +1,5 @@
-{-# LANGUAGE OverloadedStrings, DataKinds, Safe #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DataKinds #-}
 
 module QntSyn.Parse where
 

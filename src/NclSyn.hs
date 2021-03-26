@@ -1,5 +1,3 @@
-{-# LANGUAGE Safe #-}
-
 module NclSyn where
 
 import Data.Text (Text)

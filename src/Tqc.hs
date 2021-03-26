@@ -1,7 +1,6 @@
-{-# LANGUAGE DeriveFunctor, DataKinds #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE LambdaCase #-}
-
-{-# LANGUAGE FlexibleInstances #-}
 
 module Tqc where
 
@@ -12,9 +11,6 @@ import QntSyn
 import Data.Text (Text)
 import Text.Megaparsec (ParseErrorBundle)
 import Data.Void
-
-instance Show (QntExpr 'Renamed) where
-  show _ = "<expr>"
 
 data TypeError
   = TeInExpr (LQntExpr 'Renamed) TypeError
@@ -27,7 +23,6 @@ data TypeError
   | TeUnknownVar RName
   | TeUnknownType Qual
   | TeBadPatternArgs Qual Int Int
-  deriving (Show)
 
 data CompileError
   = NumRangeErr
@@ -38,7 +33,6 @@ data CompileError
   | ParseErr (ParseErrorBundle Text Void)
   | NasmErr FilePath
   | LinkErr FilePath
-  deriving (Show)
 
 data QuantaFile = QuantaFile
   { qntSrcName :: FilePath

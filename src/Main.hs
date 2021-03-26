@@ -1,31 +1,35 @@
-{-# LANGUAGE DataKinds, OverloadedStrings, LambdaCase #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Main where
 
 import Cli
 import Tqc
-import qualified Data.Text.IO as TIO
-import qualified QntSyn.Parse
-import Text.Megaparsec (parse)
-import qualified Data.Map as M
+import PhtnSyn
+import Rename
 import QntSyn
 import Tc
 import Common
+import qualified QntToNcl
+import qualified NclToPhtn
+import qualified CodeGen.Gen as CodeGen
+import qualified CodeGen.AsmText as AsmText
+import qualified QntSyn.Parse
+
+import qualified Data.Text.IO as TIO
+import Text.Megaparsec (parse)
+import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Data.Set as S
 import Data.Functor
 import Data.Traversable
 import Data.Foldable
 import Control.Monad.IO.Class
-import Rename
-import qualified QntToNcl
-import qualified NclToPhtn
-import qualified CodeGen.Gen as CodeGen
-import qualified CodeGen.AsmText as AsmText
 import System.Process
 import System.Exit
-import PhtnSyn
 import Data.Maybe
+import Data.Text (Text)
 
 data ModuleInfo p = ModuleInfo Module [DataDecl p] [QntBind p]
 
@@ -210,9 +214,12 @@ compilerMain = do
         ExitFailure _ -> throwErr $ LinkErr binOutFile
         ExitSuccess -> liftIO $ putStrLn $ "Wrote " <> binOutFile
 
+printError :: CompileError -> Text
+printError _ = "error"
+
 main :: IO ()
 main = parseArgs >>= \ case
   Nothing -> pure ()
   Just cfg -> runTqc compilerMain cfg >>= \ case
-    Left err -> print err
+    Left err -> TIO.putStrLn $ printError err
     Right () -> putStrLn "Compilation successful!"

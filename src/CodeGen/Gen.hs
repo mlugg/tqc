@@ -1,4 +1,7 @@
-{-# LANGUAGE LambdaCase, OverloadedStrings, DeriveFunctor, TupleSections #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE TupleSections #-}
 
 module CodeGen.Gen where
 

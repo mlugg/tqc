@@ -1,4 +1,7 @@
-{-# LANGUAGE Safe, LambdaCase, ScopedTypeVariables, OverloadedStrings, ViewPatterns #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module QntSyn.Pretty where
 

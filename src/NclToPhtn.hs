@@ -1,4 +1,7 @@
-{-# LANGUAGE OverloadedStrings, MultiWayIf, LambdaCase, DeriveFunctor #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE DeriveFunctor #-}
 
 module NclToPhtn where
 
