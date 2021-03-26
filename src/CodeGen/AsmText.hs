@@ -82,4 +82,4 @@ asmInsnText = \case
 
 asmFuncText :: AsmFunc -> Text
 asmFuncText (AsmFunc name is) =
-  name <> ":\n  " <> T.intercalate "\n  " (toList $ asmInsnText <$> is)
+  name <> ":\n\t" <> T.intercalate "\n\t" (toList $ asmInsnText <$> is)

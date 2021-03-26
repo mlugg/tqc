@@ -18,6 +18,10 @@ import Data.Traversable
 import Data.Foldable
 import Control.Monad.IO.Class
 import Rename
+import qualified QntToNcl
+import qualified NclToPhtn
+import qualified CodeGen.Gen as CodeGen
+import qualified CodeGen.AsmText as AsmText
 
 data ModuleInfo p = ModuleInfo Module [DataDecl p] [QntBind p]
 
@@ -113,9 +117,9 @@ compilerMain = do
         DataDecl name params _ <- datas
         let dataKind = foldr (\ (TyParam _ paramKind) k -> paramKind `KArrow` k) KStar params
         pure $ M.singleton (Qual modu name) dataKind
-        
+
       kindEnv' = builtinKindEnv <> kindEnv
-      
+
       constrEnv = fold $ do
         ModuleInfo modu datas _ <- infosRenamed
         DataDecl typeName params constrs <- datas
@@ -126,13 +130,34 @@ compilerMain = do
 
       constrEnv' = builtinConstrEnv <> constrEnv
 
-  infosTypechecked <- for infosRenamed $ \ (ModuleInfo modu datas binds) ->
-    runInfer' typeEnv' kindEnv' constrEnv' $ do
+  infosTypechecked <- for infosRenamed $ \ (ModuleInfo modu datas binds) -> do
+    (info, _) <- runInfer' typeEnv' kindEnv' constrEnv' $ do
       datas' <- traverse (checkDataConstrs modu) datas
       (_, binds') <- inferTopLevelBinds modu binds
       pure $ ModuleInfo modu datas' binds'
+    pure info
 
-  liftIO $ putStrLn "typechecked everything"
+  for_ (zip infosTypechecked (tqcFiles cfg)) $ \ (ModuleInfo modu datas binds, QuantaFile _ asmOut objOut) -> do
+    -- Note that the free variables of these binds are meaningless, as
+    -- they are top-level
+    nclBinds <- QntToNcl.runConvert' $ traverse QntToNcl.convertBind binds
+    (phtnBinds, phtnFuncs) <- NclToPhtn.runCompile' mempty {-TODO-} $ traverse NclToPhtn.compileTopLevelBind nclBinds
+    asmFuncs <- CodeGen.runGen' $ traverse CodeGen.genFunc phtnFuncs
+    let moduleStr = case modu of Module ms -> T.intercalate "." ms
+        funcsSrc = T.intercalate "\n\n" $ AsmText.asmFuncText <$> asmFuncs
+        objsSrc = fold $ phtnBinds <&> \ (name, funcName) ->
+          let objname = "obj_" <> moduleStr <> "." <> name
+          in T.unlines
+            [ "global " <> objname
+            , objname <> ":"
+            , "\tdw FLAG_STATIC"
+            , "\tdw OBJ_TYPE_THUNK_0"
+            , "\tdd 1"
+            , "\tdq " <> funcName
+            , ""
+            ]
+
+    liftIO $ TIO.putStrLn $ "section .data\n\n" <> objsSrc <> "\nsection .text\n\n" <> funcsSrc <> "\n"
 
 main :: IO ()
 main = parseArgs >>= \ case

@@ -5,6 +5,7 @@ module NclToPhtn where
 import Common
 import Data.Functor
 import PhtnSyn
+import Data.Text (Text)
 import qualified Data.Text as T
 import Numeric.Natural
 import Data.Map (Map)
@@ -29,6 +30,11 @@ data CompileEnv = CompileEnv
 
 newtype Compile a = Compile { runCompile :: Map Qual Word64 -> CompileEnv -> Natural -> Tqc (a, [PhtnFunc], PhtnSrc, Natural) }
   deriving (Functor)
+
+runCompile' :: Map Qual Word64 -> Compile a -> Tqc (a, [PhtnFunc])
+runCompile' constrEnv m = do
+  (x, fs, _, _) <- runCompile m constrEnv (CompileEnv Nothing mempty mempty 0) 0
+  pure (x, fs)
 
 instance Applicative Compile where
   pure x = Compile $ \ _ _ n -> pure (x, mempty, mempty, n)
@@ -164,7 +170,7 @@ compile = \case
     -- Compile the body expression with the environment created above,
     -- and extract all the source code it writes
     cbody <- flushSrc' $ withEnv (const fnEnv) $ compile body
-    
+
     -- Output a complete function containing the lambda's body code with
     -- the given name
     tellFun $ PhtnFunc fnName cbody
@@ -181,7 +187,7 @@ compile = \case
       lookupLocal name
       -- Set the field within the object's closure, and pop the value
       -- back off of the stack
-      tellSrc $ PObjSetPtr (TopOff 1) (idx + 1) (TopOff 0) 
+      tellSrc $ PObjSetPtr (TopOff 1) (idx + 1) (TopOff 0)
              <| PPop 1
              <| mempty
 
@@ -293,3 +299,22 @@ lookupConstr :: Qual -> Compile Word64
 lookupConstr c = Compile $ \ ce _ n -> case M.lookup c ce of
   Nothing -> throwErr $ TypeErr $ TeUnknownVar $ QualName c -- This should have been caught earlier, but we'll throw it now anyway
   Just x  -> pure (x, mempty, mempty, n)
+
+compileTopLevelBind :: NclBind -> Compile (Text, Text)
+compileTopLevelBind (NclBind (NclBinder name) _ expr) = do
+    -- Give the function containing the bind's code a unique name
+    fnName <- mappend "fn_" . T.pack . show <$> freshId
+
+    -- Compile the body expression and extract all the source code it writes
+    cexpr <- flushSrc' $ compile expr
+
+    -- Output a complete function containing the lambda's body code with
+    -- the given name
+    tellFun $ PhtnFunc fnName cexpr
+
+    let name' = case name of
+          SrcName x -> x
+          GenName x -> x
+
+    -- Return the binding name and compiled function name
+    pure (name', fnName)

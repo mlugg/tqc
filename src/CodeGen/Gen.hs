@@ -20,6 +20,9 @@ import qualified Data.Text as T
 newtype Gen a = Gen { runGen :: Natural -> Tqc (a, Natural) }
   deriving (Functor)
 
+runGen' :: Gen a -> Tqc a
+runGen' m = fst <$> runGen m 0
+
 instance Applicative Gen where
   pure x = Gen $ \n -> pure (x, n)
   (<*>) = ap

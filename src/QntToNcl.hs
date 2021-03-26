@@ -29,6 +29,9 @@ seqRemove xs s = Seq.filter (`notElem` xs) s
 newtype Convert a = Convert { runConvert :: Integer -> Tqc (a, Integer) }
   deriving (Functor)
 
+runConvert' :: Convert a -> Tqc a
+runConvert' m = fst <$> runConvert m 0
+
 instance Applicative Convert where
   pure x = Convert $ \ n -> pure (x, n)
   (<*>) = ap
