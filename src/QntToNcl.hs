@@ -98,7 +98,6 @@ convertExpr = \ case
     <$> traverse convertBind bs
     <*> convertLExpr e
   QntCase e as -> do
-    -- TODO: bind scrutinee to lname, wrap whole thing in let
     scrutLname <- freshName
     let scrutRname = LoclName scrutLname
     scrutBind <- NclBind (NclBinder scrutLname) (freesL' e) <$> convertLExpr e

@@ -8,11 +8,13 @@ import Data.Text (Text)
 import Data.Set (Set)
 import qualified Data.Set as S
 import Control.Monad
-import Data.Traversable
 import Common
 
 newtype Rename a = Rename { runRename :: [Qual] -> [Qual] -> Set Text -> Tqc a }
   deriving (Functor)
+
+runRename' :: [Qual] -> [Qual] -> Rename a -> Tqc a
+runRename' vs ts m = runRename m vs ts mempty
 
 instance Applicative Rename where
   pure x = Rename $ \ _ _ _ -> pure x
@@ -64,13 +66,8 @@ renameExpr = \case
   QntLet bs body ->
     let names = S.fromList $ bindName <$> bs
     in withLocals names $ do
-      bs' <- for bs $ \b ->
-        case b of
-          QntImpl n e   -> QntImpl n <$> renameLExpr e
-          QntExpl n e s -> QntExpl n <$> renameLExpr e <*> renameLScheme s
-
+      bs' <- traverse renameBind bs
       body' <- renameLExpr body
-
       pure $ QntLet bs' body'
 
   QntCase e as ->
@@ -126,3 +123,14 @@ renameType = \case
                Just m  -> pure $ TName (Qual m n)
   TVar v     -> pure $ TVar v
   TApp t0 t1 -> TApp <$> renameType t0 <*> renameType t1
+
+renameBind :: QntBind 'Parsed -> Rename (QntBind 'Renamed)
+renameBind = \ case
+  QntImpl n e   -> QntImpl n <$> renameLExpr e
+  QntExpl n e s -> QntExpl n <$> renameLExpr e <*> renameLScheme s
+
+renameData :: DataDecl 'Parsed -> Rename (DataDecl 'Renamed)
+renameData (DataDecl x ps cs) = DataDecl x ps <$> traverse renameConstr cs
+
+renameConstr :: DataConstr 'Parsed -> Rename (DataConstr 'Renamed)
+renameConstr (DataConstr x as) = DataConstr x <$> traverse renameType as

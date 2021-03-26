@@ -109,7 +109,7 @@ data Type id
   = TName id
   | TVar TyVar
   | TApp (Type id) (Type id)
-  deriving (Eq)
+  deriving (Eq, Show)
 
 newtype TyVar = TyVar Integer
   deriving (Ord, Eq, Show)
@@ -120,6 +120,7 @@ tArrow :: Type Qual -> Type Qual -> Type Qual
 tArrow t0 t1 = (TApp (TName (Qual (Module []) "->")) t0) `TApp` t1
 
 data Scheme id = Scheme (Set Text) (Type id)
+  deriving (Show)
 
 -- }}}
 
@@ -130,7 +131,7 @@ infixr 5 `KArrow`
 data Kind
   = KStar
   | KArrow Kind Kind
-  deriving (Eq)
+  deriving (Eq, Show)
 
 -- }}}
 
@@ -202,7 +203,7 @@ instance Semigroup SrcSpan where
   SrcSpan s0 e0 <> SrcSpan s1 e1 = SrcSpan (min s0 s1) (max e0 e1)
 
 data Located a = L SrcSpan a
-  deriving (Functor, Foldable, Traversable)
+  deriving (Functor, Foldable, Traversable, Show)
 
 unLoc :: Located a -> a
 unLoc (L _ x) = x

@@ -201,6 +201,16 @@ withEnv new m = Infer $ \ te ke ce s u ->
   let te' = new <> te
   in runInfer m te' ke ce s u
 
+withKindEnv :: KindEnv -> Infer a -> Infer a
+withKindEnv new m = Infer $ \ te ke ce s u ->
+  let ke' = new <> ke
+  in runInfer m te ke' ce s u
+
+withConstrEnv :: ConstrEnv -> Infer a -> Infer a
+withConstrEnv new m = Infer $ \ te ke ce s u ->
+  let ce' = new <> ce
+  in runInfer m te ke ce' s u
+
 withType :: RName -> Scheme Qual -> Infer a -> Infer a
 withType n t m = Infer $ \ te ke ce s u ->
   let te' = M.insert n t te
@@ -306,6 +316,9 @@ instance Monad Infer where
 instance TqcMonad Infer where
   lift m = Infer $ \ _ _ _ s u ->
     m <&> \ x -> (x,s,u)
+
+runInfer' :: TypeEnv -> KindEnv -> ConstrEnv -> Infer a -> Tqc (a, Substitution)
+runInfer' te ke ce m = runInfer m te ke ce mempty 0 <&> \ (x, sub, _) -> (x, sub)
 
 -- }}}
 
@@ -587,7 +600,7 @@ inferBinds bs = do
         QntImpl b e   -> Left  (b, e)
         QntExpl b e s -> Right (b, e, s)
 
-      implGroups = mkBindGroups implBinds
+      implGroups = mkBindGroups (LoclName . SrcName) implBinds
       
       explEnvGiven = M.fromList $ explBinds <&> \(n, _, L _ s) -> (LoclName $ SrcName n, s)
 
@@ -600,7 +613,7 @@ inferBinds bs = do
 
   explBinds' <- withEnv fullEnv $
     for explBinds $ \(n,e,s) -> do
-      (env, g) <- inferBindGroup [(n,e)]
+      (env, g) <- inferBindGroup (LoclName . SrcName) [(n,e)]
       let e' = snd $ head g
 
       let inferred = env M.! LoclName (SrcName n)
@@ -615,42 +628,41 @@ inferBinds bs = do
   pure (fullEnv, explBinds' <> implBinds')
 
   where f curEnv g = do
-          (newEnv, g') <- withEnv curEnv $ inferBindGroup g
+          (newEnv, g') <- withEnv curEnv $ inferBindGroup (LoclName . SrcName) g
           pure (newEnv <> curEnv, g')
 
-patBinds :: QntPat 'Renamed -> Set LName
+patBinds :: QntPat 'Renamed -> Set RName
 patBinds = \case
-  QntNamePat (NamePat n) -> S.singleton (SrcName n)
+  QntNamePat (NamePat n) -> S.singleton (LoclName $ SrcName n)
   QntNatLitPat _ -> S.empty
   QntConstrPat (ConstrPat _ ps) -> foldMap patBinds ps
 
-freeVars' :: LQntExpr 'Renamed -> Set LName
+freeVars' :: LQntExpr 'Renamed -> Set RName
 freeVars' (L _ e) = freeVars e
 
-freeVars :: QntExpr 'Renamed -> Set LName
+freeVars :: QntExpr 'Renamed -> Set RName
 freeVars = \case
-  QntVar (LoclName n) -> S.singleton n
-  QntVar _ -> S.empty
+  QntVar n -> S.singleton n
   QntNatLit _ -> S.empty
   QntApp e0 e1 -> freeVars' e0 <> freeVars' e1
-  QntLam b e -> S.delete (SrcName b) $ freeVars' e
+  QntLam b e -> S.delete (LoclName $ SrcName b) $ freeVars' e
   QntCase scrut as -> freeVars' scrut <> foldMap (\(L _ (QntAlt p e)) -> freeVars' e S.\\ patBinds p) as
   QntLet bs e ->
-    let bound = S.fromList $ SrcName . bindName <$> bs
+    let bound = S.fromList $ LoclName . SrcName . bindName <$> bs
         exprs = e : fmap bindExpr bs
     in foldMap freeVars' exprs S.\\ bound
 
-mkBindGroups :: [(Binder 'Renamed, LQntExpr 'Renamed)] -> [[(Binder 'Renamed, LQntExpr 'Renamed)]]
-mkBindGroups bs =
-  let nodes = bs <&> \(b,e) -> ((b,e), SrcName b, S.toList $ freeVars' e)
+mkBindGroups :: (Text -> RName) -> [(Binder 'Renamed, LQntExpr 'Renamed)] -> [[(Binder 'Renamed, LQntExpr 'Renamed)]]
+mkBindGroups mkName bs =
+  let nodes = bs <&> \(b,e) -> ((b,e), mkName b, S.toList $ freeVars' e)
   in G.flattenSCC <$> G.stronglyConnComp nodes
 
-inferBindGroup :: [(Binder 'Renamed, LQntExpr 'Renamed)] -> Infer (TypeEnv, [(Binder 'Typechecked, LQntExpr 'Typechecked)])
-inferBindGroup bs = do
+inferBindGroup :: (Text -> RName) -> [(Binder 'Renamed, LQntExpr 'Renamed)] -> Infer (TypeEnv, [(Binder 'Typechecked, LQntExpr 'Typechecked)])
+inferBindGroup mkName bs = do
   initFreeTvs <- getEnvFreeTvs
 
   let (names, exprs) = unzip bs
-      rnames = LoclName . SrcName <$> names
+      rnames = mkName <$> names
 
   tvs <- sequenceA $ fresh <$ bs
 
@@ -672,3 +684,51 @@ inferBindGroup bs = do
       binders = zipWith TcBinder names types
 
   pure (finalEnv, zip binders exprs')
+
+checkDataConstrs :: Module -> DataDecl 'Renamed -> Infer (DataDecl 'Typechecked)
+checkDataConstrs modu (DataDecl typeName ps cs) = do
+  let argKe = M.fromList $ ps <&> \ (TyParam x k) -> (Qual modu x, k)
+  cs' <- withKindEnv argKe $ traverse checkConstr cs
+  pure $ DataDecl typeName ps cs'
+
+checkConstr :: DataConstr 'Renamed -> Infer (DataConstr 'Typechecked)
+checkConstr (DataConstr x as) = do
+  traverse_ checkKind as
+  pure $ DataConstr x as
+
+inferTopLevelBinds :: Module -> [QntBind 'Renamed] -> Infer (TypeEnv, [QntBind 'Typechecked])
+inferTopLevelBinds modu bs = do
+  let (implBinds, explBinds) = partitionEithers $ bs <&> \case
+        QntImpl b e   -> Left  (b, e)
+        QntExpl b e s -> Right (b, e, s)
+
+      implGroups = mkBindGroups (QualName . Qual modu) implBinds
+      
+      explEnvGiven = M.fromList $ explBinds <&> \(n, _, L _ s) -> (QualName $ Qual modu n, s)
+
+  (fullEnv, implGroups') <- mapAccumLM f explEnvGiven implGroups
+
+  let implBinds' = uncurry QntImpl <$> fold implGroups'
+
+  -- Everything's inferred, but we need to check the types of the
+  -- explicit bindings make sense!
+
+  explBinds' <- withEnv fullEnv $
+    for explBinds $ \(n,e,s) -> do
+      (env, g) <- inferBindGroup (QualName . Qual modu) [(n,e)]
+      let e' = snd $ head g
+
+      let inferred = env M.! QualName (Qual modu n)
+      sub <- getSub
+      let (L loc s') = applySub sub s
+          inferred' = applySub sub inferred
+          Scheme _ ty' = s'
+      if s' `isInstanceOf` inferred'
+      then pure $ QntExpl (TcBinder n ty') e' (L loc s')
+      else throwTypeErr $ TeSchemeMismatch s' inferred'
+
+  pure (fullEnv, explBinds' <> implBinds')
+
+  where f curEnv g = do
+          (newEnv, g') <- withEnv curEnv $ inferBindGroup (QualName . Qual modu) g
+          pure (newEnv <> curEnv, g')

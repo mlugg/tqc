@@ -97,7 +97,7 @@ semiTerm p = p <* semi
 -- }}}
 
 file :: Parser QntProg
-file = sc *> (mkProg <$> many tl) <* eof
+file = sc *> (mkProg <$> tl `endBy` semi) <* eof
   where tl = Left  <$> dataDecl
          <|> Right <$> binding
         mkProg tls =
