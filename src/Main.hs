@@ -160,7 +160,7 @@ compilerMain = do
   infosTypechecked <- for infosRenamed $ \ (ModuleInfo filePath modu datas binds) ->
     wrapErrorFile filePath $ do
       (info, _) <- runInfer' typeEnv' kindEnv' constrEnv' $ do
-        datas' <- traverse (checkDataConstrs modu) datas
+        datas' <- traverse checkDataConstrs datas
         (_, binds') <- inferTopLevelBinds modu binds
         pure $ ModuleInfo filePath modu datas' binds'
       pure info

@@ -690,9 +690,9 @@ inferBindGroup mkName bs = do
 
   pure (finalEnv, zip binders exprs')
 
-checkDataConstrs :: Module -> DataDecl 'Renamed -> Infer (DataDecl 'Typechecked)
-checkDataConstrs modu (DataDecl typeName ps cs) = do
-  let argKe = M.fromList $ ps <&> \ (TyParam x k) -> (Qual modu x, k)
+checkDataConstrs :: DataDecl 'Renamed -> Infer (DataDecl 'Typechecked)
+checkDataConstrs (DataDecl typeName ps cs) = do
+  let argKe = M.fromList $ ps <&> \ (TyParam x k) -> (Qual (Module []) x, k)
   cs' <- withKindEnv argKe $ traverse checkConstr cs
   pure $ DataDecl typeName ps cs'
 

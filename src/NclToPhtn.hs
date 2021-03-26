@@ -267,13 +267,16 @@ compile = \case
     -- Force evaluation to WHNF
     tellSrc $ pure PEval
 
-    withStackOff 1 $ do
-      -- Create a list of switch alternatives
-      altsSrcs <- traverse compileCase alts
-      -- Compile the default case
-      defSrc <- flushSrc' $ compile def
-      -- Switch on its constructor
-      tellSrc $ pure $ PObjSwitchLit 0 altsSrcs defSrc
+    -- We don't compile this with a stack offset, because when the code
+    -- is run (in the PObjSwitchLit body) the object has actually been
+    -- removed from the stack.
+
+    -- Create a list of switch alternatives
+    altsSrcs <- traverse compileCase alts
+    -- Compile the default case
+    defSrc <- flushSrc' $ compile def
+    -- Switch on its constructor
+    tellSrc $ pure $ PObjSwitchLit 0 altsSrcs defSrc
 
 compileCase :: NclAlt -> Compile SwitchAlt
 compileCase (NclAlt pat expr) = do

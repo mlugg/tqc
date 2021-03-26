@@ -12,6 +12,7 @@ import Data.Set (Set)
 import qualified Data.Set as S
 import Control.Monad
 import Common
+import Data.Functor
 
 newtype Rename a = Rename { runRename :: [Qual] -> [Qual] -> Set Text -> Tqc a }
   deriving (Functor)
@@ -135,7 +136,8 @@ renameBind = \ case
   QntExpl n e s -> QntExpl n <$> renameLExpr e <*> renameLScheme s
 
 renameData :: DataDecl 'Parsed -> Rename (DataDecl 'Renamed)
-renameData (DataDecl x ps cs) = DataDecl x ps <$> traverse renameConstr cs
+renameData (DataDecl x ps cs) = DataDecl x ps <$> traverse (renameConstr ps') cs
+  where ps' = S.fromList $ ps <&> \ (TyParam n _) -> n
 
-renameConstr :: DataConstr 'Parsed -> Rename (DataConstr 'Renamed)
-renameConstr (DataConstr x as) = DataConstr x <$> traverse (renameType S.empty) as
+renameConstr :: Set Text -> DataConstr 'Parsed -> Rename (DataConstr 'Renamed)
+renameConstr params (DataConstr x as) = DataConstr x <$> traverse (renameType params) as

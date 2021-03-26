@@ -125,7 +125,7 @@ typeParam = flip TyParam KStar <$> identLower
 -- A data constructor is just the constructor name followed by the types
 -- of its parameters
 dataConstr :: Parser (DataConstr 'Parsed)
-dataConstr = DataConstr <$> identUpperOp <*> many type_
+dataConstr = DataConstr <$> identUpperOp <*> many typeTerm
 
 -- }}}
 
