@@ -143,3 +143,9 @@ alloc:
 	pop rcx
 	pop rax
 	ret
+
+global obj_error
+obj_error:
+	mov rax, 60
+	mov rdi, 1
+	syscall
