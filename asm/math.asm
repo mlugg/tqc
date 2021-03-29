@@ -77,29 +77,29 @@
 
 section .data
 
-global obj_Data.Nat.add
-obj_Data.Nat.add:
+global obj_Data.Nat.#00002b ; +
+obj_Data.Nat.#00002b:
 	dw FLAG_STATIC
 	dw OBJ_TYPE_THUNK_0
 	dd 1
 	dq mk_add
 
-global obj_Data.Nat.sub
-obj_Data.Nat.sub:
+global obj_Data.Nat.#00002d ; -
+obj_Data.Nat.#00002d:
 	dw FLAG_STATIC
 	dw OBJ_TYPE_THUNK_0
 	dd 1
 	dq mk_sub
 
-global obj_Data.Nat.mul
-obj_Data.Nat.mul:
+global obj_Data.Nat.#00002a ; *
+obj_Data.Nat.#00002a:
 	dw FLAG_STATIC
 	dw OBJ_TYPE_THUNK_0
 	dd 1
 	dq mk_mul
 
-global obj_Data.Nat.div
-obj_Data.Nat.div:
+global obj_Data.Nat.#00002f ; /
+obj_Data.Nat.#00002f:
 	dw FLAG_STATIC
 	dw OBJ_TYPE_THUNK_0
 	dd 1

@@ -47,10 +47,10 @@ builtinKindEnv = M.fromList
 builtinTypeEnv :: TypeEnv
 builtinTypeEnv = M.fromList
   [ (QualName $ Qual (Module []) "error", Scheme (S.singleton "a") (TName $ Qual (Module []) "a"))
-  , (QualName $ Qual (Module ["Data", "Nat"]) "add", Scheme mempty (tNat `tArrow` tNat `tArrow` tNat))
-  , (QualName $ Qual (Module ["Data", "Nat"]) "sub", Scheme mempty (tNat `tArrow` tNat `tArrow` tNat))
-  , (QualName $ Qual (Module ["Data", "Nat"]) "mul", Scheme mempty (tNat `tArrow` tNat `tArrow` tNat))
-  , (QualName $ Qual (Module ["Data", "Nat"]) "div", Scheme mempty (tNat `tArrow` tNat `tArrow` tNat))
+  , (QualName $ Qual (Module ["Data", "Nat"]) "+", Scheme mempty (tNat `tArrow` tNat `tArrow` tNat))
+  , (QualName $ Qual (Module ["Data", "Nat"]) "-", Scheme mempty (tNat `tArrow` tNat `tArrow` tNat))
+  , (QualName $ Qual (Module ["Data", "Nat"]) "*", Scheme mempty (tNat `tArrow` tNat `tArrow` tNat))
+  , (QualName $ Qual (Module ["Data", "Nat"]) "/", Scheme mempty (tNat `tArrow` tNat `tArrow` tNat))
   ]
 
 builtinConstrEnv :: ConstrEnv
@@ -173,9 +173,7 @@ compilerMain = do
       (phtnBinds, phtnFuncs) <- NclToPhtn.runCompile' constrIds $ traverse NclToPhtn.compileTopLevelBind nclBinds
       asmFuncs <- CodeGen.runGen' $ traverse CodeGen.genFunc phtnFuncs
 
-      let moduleStr = case modu of Module ms -> T.intercalate "." ms
-
-          localNames = phtnBinds <&> \ (name, _) -> "obj_" <> moduleStr <> "." <> name
+      let localNames = phtnBinds <&> \ (name, _) -> qualToAsmName (Qual modu name)
           externNames = foldMap getPhtnGlobalRefs phtnFuncs S.\\ S.fromList localNames
 
           externsSrc = foldMap (\ n -> "extern " <> n <> "\n") externNames
@@ -183,7 +181,7 @@ compilerMain = do
           funcsSrc = T.intercalate "\n\n" $ AsmText.asmFuncText <$> asmFuncs
 
           objsSrc = fold $ phtnBinds <&> \ (name, funcName) ->
-            let objname = "obj_" <> moduleStr <> "." <> name
+            let objname = qualToAsmName (Qual modu name)
                 extra = if name /= "main" then "" else "global obj_main\nobj_main:\n"
             in T.unlines
               [ "global " <> objname

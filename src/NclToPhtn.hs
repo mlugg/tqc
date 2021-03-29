@@ -85,8 +85,8 @@ lookupVar :: RName -> Compile ()
 lookupVar = \case
   -- If we're referring to a global, simply refer to it by name - e.g.
   -- 'Data.Nat.add' is named 'obj_Data.Nat.add' in the binary.
-  QualName (Qual (Module m) x) -> tellSrc $ pure $
-    PPushGlobl ("obj_" <> T.intercalate "." m <> "." <> x)
+  QualName q -> tellSrc $ pure $
+    PPushGlobl (qualToAsmName q)
 
   -- If we're referring to a local, look it up separately.
   LoclName x -> lookupLocal (NclBinder x)

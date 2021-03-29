@@ -58,7 +58,7 @@ reservedOps = [ "\\", "->", "::", "=", "|", "." ]
 identChar :: Parser Char
 identChar = oneOf $ ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ ['_','\'']
 opChar :: Parser Char
-opChar = oneOf (".,:!<>[]+-=|\\/" :: [Char])
+opChar = oneOf (".,:!<>[]+-=|\\/*" :: [Char])
 
 identifier :: Parser Char -> Parser Text
 identifier identStart = try $ do
@@ -195,7 +195,10 @@ typeScheme = located $ polyType <|> (Scheme S.empty <$> type_)
 expr :: Parser (LQntExpr 'Parsed)
 expr = makeExprParser exprTerm
   [ [ InfixL $ pure $ \ f@(L fs _) x@(L xs _) -> L (fs <> xs) (QntApp f x) ]
+  , [ InfixR $ someOp <$> located operator ]
   ]
+  where someOp (L os o) l@(L ls _) r@(L rs _) =
+          L (ls <> os <> rs) $ QntApp (L (os <> ls) $ QntApp (L os $ QntVar o) l) r
 
 exprTerm :: Parser (LQntExpr 'Parsed)
 exprTerm = try (parens expr)
