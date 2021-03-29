@@ -324,3 +324,38 @@ compileTopLevelBind (NclBind (NclBinder name) _ expr) = do
 
     -- Return the binding name and compiled function name
     pure (name', fnName)
+
+compileConstrFunction :: Qual -> Int -> Compile (Text, Text)
+compileConstrFunction constr@(Qual _ name) nargs = do
+  fnName <- mappend "cfn_" . T.pack . show <$> freshId
+  helperFn <- flushSrc' $ go 0
+  tellFun $ PhtnFunc fnName helperFn
+  pure (name, fnName)
+  where nargs' = fromIntegral nargs
+        go argsTaken
+          | argsTaken == nargs' = do
+              constrId <- lookupConstr constr
+              tellSrc $ PAllocate (AllocData nargs')
+                     <| PObjSetLit (TopOff 0) 0 constrId
+                     <| mempty
+
+          | otherwise = do
+              fnName <- mappend "cfn_" . T.pack . show <$> freshId
+
+              body <- flushSrc' $ do
+                go (argsTaken + 1)
+
+                when (argsTaken > 0) $
+                  for_ [0 .. argsTaken - 1] $ \ n ->
+                    tellSrc $ PPushClos n
+                           <| PObjSetPtr (TopOff 1) (n + 1) (TopOff 0)
+                           <| PPop 1
+                           <| mempty
+
+                tellSrc $ PPushArg
+                       <| PObjSetPtr (TopOff 1) (argsTaken + 1) (TopOff 0)
+                       <| PPop 1
+                       <| mempty
+
+              tellFun $ PhtnFunc fnName body
+              tellSrc $ pure $ PAllocate (AllocFun argsTaken fnName)

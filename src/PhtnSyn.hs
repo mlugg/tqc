@@ -15,7 +15,7 @@ data PhtnInsn
   | PPushClos Word64 -- PPushBody offset
   | PPushStack StackPos
   | PPushGlobl Text
-  | PAllocate  AllocInfo -- PAllocate bodyLen type
+  | PAllocate AllocInfo -- PAllocate bodyLen type
   | PObjSetPtr StackPos Word64 StackPos -- PObjSetPtr obj field val
   | PObjSetLit StackPos Word64 Word64 -- PObjSetLit obj field val
   | PObjGetPtr StackPos Word64 -- PObjGetPtr obj field

@@ -118,7 +118,7 @@ compilerMain = do
         let constrsEnv = do
               DataDecl typeName params constrs <- datas
               let paramNames = params <&> \ (TyParam n _) -> n
-              let typeOut = foldr TApp (TName $ Qual modu typeName) (TName . Qual (Module []) <$> paramNames)
+              let typeOut = foldl TApp (TName $ Qual modu typeName) (TName . Qual (Module []) <$> paramNames)
               DataConstr name args <- constrs
               let constrType = foldr tArrow typeOut args
               pure $ M.singleton (QualName $ Qual modu name) (Scheme (S.fromList paramNames) constrType)
@@ -165,12 +165,20 @@ compilerMain = do
         pure $ ModuleInfo filePath modu datas' binds'
       pure info
 
-  for_ (zip infosTypechecked (tqcFiles cfg)) $ \ (ModuleInfo filePath modu _ binds, QuantaFile _ asmOutFile objOutFile) ->
+  for_ (zip infosTypechecked (tqcFiles cfg)) $ \ (ModuleInfo filePath modu datas binds, QuantaFile _ asmOutFile objOutFile) ->
     wrapErrorFile filePath $ do
       -- Note that the free variables of these binds are meaningless, as
       -- they are top-level
       nclBinds <- QntToNcl.runConvert' $ traverse QntToNcl.convertBind binds
-      (phtnBinds, phtnFuncs) <- NclToPhtn.runCompile' constrIds $ traverse NclToPhtn.compileTopLevelBind nclBinds
+
+      (phtnBinds, phtnFuncs) <- NclToPhtn.runCompile' constrIds $ do
+        normalBinds <- traverse NclToPhtn.compileTopLevelBind nclBinds
+        constrBinds <- fmap fold $
+          for datas $ \ (DataDecl _ _ constrs) ->
+            for constrs $ \ (DataConstr name as) ->
+              NclToPhtn.compileConstrFunction (Qual modu name) (length as)
+        pure $ normalBinds <> constrBinds
+
       asmFuncs <- CodeGen.runGen' $ traverse CodeGen.genFunc phtnFuncs
 
       let localNames = phtnBinds <&> \ (name, _) -> qualToAsmName (Qual modu name)

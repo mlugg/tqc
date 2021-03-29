@@ -54,13 +54,3 @@ data NclPat
 
 data NclAlt = NclAlt NclPat NclExpr
   deriving (Show)
-
--- Like NclExpr, DataDecl is untyped
-data DataDecl = DataDecl Text [DataConstr]
-  deriving (Show)
-
-data DataConstr = DataConstr Text Natural  -- DataConstr name nargs
-  deriving (Show)
-
-data NclProg = NclProg [DataDecl] [NclBind]
-  deriving (Show)
